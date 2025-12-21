@@ -1,4 +1,12 @@
-import { embedQuery, generateAnswer, jsonResponse, loadChunks, rankChunks, sanitizeConversation } from "./_shared";
+import {
+  checkRateLimit,
+  embedQuery,
+  generateAnswer,
+  jsonResponse,
+  loadChunks,
+  rankChunks,
+  sanitizeConversation
+} from "./_shared";
 import type { ChatMessage, ChunkRecord, Env } from "./_shared";
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -6,6 +14,19 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const body = await request.json().catch(() => ({}));
     const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
     const limit = Number(body.limit ?? 6);
+    const sessionId = typeof body.sessionId === "string" ? body.sessionId : "anonymous";
+
+    const rate = checkRateLimit(sessionId);
+    if (!rate.ok) {
+      const retryAfterMs = Math.max(0, rate.resetAt - Date.now());
+      return jsonResponse(
+        {
+          error: `Rate limit reached. Try again in ${Math.ceil(retryAfterMs / 1000)}s.`,
+          retryAfterMs
+        },
+        429
+      );
+    }
 
     if (!prompt) {
       return jsonResponse({ error: "Missing prompt." }, 400);

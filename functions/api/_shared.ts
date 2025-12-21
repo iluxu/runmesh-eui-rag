@@ -25,11 +25,24 @@ export type Env = {
 
 const DEFAULT_MODEL = "gpt-5.2";
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 12;
+const SYSTEM_PROMPT = [
+  "You are a friendly, pragmatic EUI/ECL expert for frontend developers.",
+  "Write in a warm, conversational tone with short paragraphs.",
+  "Use headings or bullets when it helps, and include code snippets when useful.",
+  "Answer using the sources provided for doc claims.",
+  "You may refer to the conversation history without citing sources.",
+  "Always include a Sources section with links for doc-based statements.",
+  "If you cannot find the answer, say so and ask a clarifying question.",
+  "Do not invent APIs or components."
+].join("\n");
 const CHUNKS_KEY = "chunks.json";
 
 let cachedChunks: ChunkWithNorm[] | null = null;
 let cachedMeta: { generatedAt?: string; model?: string; baseUrl?: string } | null = null;
 let loadingPromise: Promise<ChunkWithNorm[]> | null = null;
+const rateLimits = new Map<string, { count: number; resetAt: number }>();
 
 function vectorNorm(values: number[]): number {
   let sum = 0;
@@ -123,23 +136,41 @@ export async function embedQuery(text: string, env: Env): Promise<number[]> {
   return embedding;
 }
 
-export async function generateAnswer(
-  prompt: string,
-  sources: ChunkRecord[],
-  env: Env,
-  conversation?: ChatMessage[]
-) {
-  const systemPrompt = [
-    "You are a friendly, pragmatic EUI/ECL expert for frontend developers.",
-    "Write in a warm, conversational tone with short paragraphs.",
-    "Use headings or bullets when it helps, and include code snippets when useful.",
-    "Answer using the sources provided for doc claims.",
-    "You may refer to the conversation history without citing sources.",
-    "Always include a Sources section with links for doc-based statements.",
-    "If you cannot find the answer, say so and ask a clarifying question.",
-    "Do not invent APIs or components."
-  ].join("\n");
+export function checkRateLimit(sessionId: string, now = Date.now()) {
+  const key = sessionId || "anonymous";
+  const existing = rateLimits.get(key);
+  if (!existing || now > existing.resetAt) {
+    const entry = { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS };
+    rateLimits.set(key, entry);
+    return {
+      ok: true,
+      remaining: RATE_LIMIT_MAX - 1,
+      resetAt: entry.resetAt
+    };
+  }
 
+  existing.count += 1;
+  rateLimits.set(key, existing);
+  if (existing.count > RATE_LIMIT_MAX) {
+    return {
+      ok: false,
+      remaining: 0,
+      resetAt: existing.resetAt
+    };
+  }
+
+  return {
+    ok: true,
+    remaining: Math.max(0, RATE_LIMIT_MAX - existing.count),
+    resetAt: existing.resetAt
+  };
+}
+
+export function buildSystemPrompt() {
+  return SYSTEM_PROMPT;
+}
+
+export function buildUserPrompt(prompt: string, sources: ChunkRecord[]) {
   const sourceBlock = sources
     .map((source, index) => {
       const header = `[${index + 1}] ${source.title || "Untitled"} — ${source.url}`;
@@ -147,7 +178,17 @@ export async function generateAnswer(
     })
     .join("\n\n");
 
-  const userPrompt = [`Question: ${prompt}`, "", "Sources:", sourceBlock].join("\n");
+  return [`Question: ${prompt}`, "", "Sources:", sourceBlock].join("\n");
+}
+
+export async function generateAnswer(
+  prompt: string,
+  sources: ChunkRecord[],
+  env: Env,
+  conversation?: ChatMessage[]
+) {
+  const systemPrompt = buildSystemPrompt();
+  const userPrompt = buildUserPrompt(prompt, sources);
 
   const chatMessages = [
     { role: "system", content: systemPrompt },
