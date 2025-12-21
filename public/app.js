@@ -7,8 +7,10 @@ const refreshIndexBtn = document.getElementById("refresh-index");
 const suggestionChips = document.querySelectorAll(".suggestion-chip");
 
 const sessionKey = "runmesh_eui_session";
+const historyKey = "runmesh_eui_history";
 const fallbackId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 let sessionId = fallbackId;
+let conversation = [];
 
 let safeStorage = null;
 try {
@@ -26,6 +28,28 @@ if (safeStorage) {
   }
 } else {
   sessionId = crypto?.randomUUID?.() ?? fallbackId;
+}
+
+function loadHistory() {
+  if (!safeStorage) return [];
+  try {
+    const raw = safeStorage.getItem(historyKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item) => item && (item.role === "user" || item.role === "assistant"));
+  } catch {
+    return [];
+  }
+}
+
+function saveHistory() {
+  if (!safeStorage) return;
+  try {
+    safeStorage.setItem(historyKey, JSON.stringify(conversation));
+  } catch {
+    // Ignore storage failures.
+  }
 }
 
 function escapeHtml(input) {
@@ -65,27 +89,55 @@ function addMessage(role, text) {
   chatLog.scrollTop = chatLog.scrollHeight;
 }
 
+function renderHistory() {
+  if (!chatLog) return;
+  chatLog.innerHTML = "";
+  conversation.forEach((msg) => addMessage(msg.role, msg.content));
+}
+
+const defaultGreeting = {
+  role: "assistant",
+  content: "Ask about any EUI component, API, or quickstart step."
+};
+
+conversation = loadHistory();
+if (!conversation.length) {
+  conversation = [defaultGreeting];
+  saveHistory();
+}
+renderHistory();
+
 if (chatForm) {
   chatForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const prompt = chatInput.value.trim();
     if (!prompt) return;
     addMessage("user", prompt);
+    conversation.push({ role: "user", content: prompt });
+    saveHistory();
     chatStatus.textContent = "Working";
+
+    const outbound = conversation.filter(
+      (msg) => !(msg.role === "assistant" && msg.content === defaultGreeting.content)
+    );
 
     const res = await fetch("/api/ask", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt, sessionId })
+      body: JSON.stringify({ prompt, sessionId, messages: outbound })
     });
     const payload = await res.json();
     if (!res.ok || payload.error) {
       chatStatus.textContent = "Error";
       addMessage("assistant", payload.error || "Request failed");
+      conversation.push({ role: "assistant", content: payload.error || "Request failed" });
+      saveHistory();
       return;
     }
     chatStatus.textContent = "Ready";
     addMessage("assistant", payload.response || "");
+    conversation.push({ role: "assistant", content: payload.response || "" });
+    saveHistory();
   });
 }
 

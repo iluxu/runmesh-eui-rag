@@ -1,5 +1,5 @@
-import { embedQuery, generateAnswer, jsonResponse, loadChunks, rankChunks } from "./_shared";
-import type { ChunkRecord, Env } from "./_shared";
+import { embedQuery, formatConversation, generateAnswer, jsonResponse, loadChunks, rankChunks } from "./_shared";
+import type { ChatMessage, ChunkRecord, Env } from "./_shared";
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   try {
@@ -24,7 +24,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       embedding: []
     }));
 
-    const answer = await generateAnswer(prompt, sources, env);
+    const rawMessages = Array.isArray(body.messages) ? body.messages : [];
+    const messages = rawMessages.filter(Boolean) as ChatMessage[];
+    const conversation = formatConversation(messages, prompt);
+    const answer = await generateAnswer(prompt, sources, env, conversation);
     return jsonResponse({ response: answer, sources });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

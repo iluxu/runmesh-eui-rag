@@ -11,6 +11,11 @@ export type ChunkWithNorm = ChunkRecord & {
   norm: number;
 };
 
+export type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 export type Env = {
   OPENAI_API_KEY: string;
   OPENAI_MODEL?: string;
@@ -118,7 +123,12 @@ export async function embedQuery(text: string, env: Env): Promise<number[]> {
   return embedding;
 }
 
-export async function generateAnswer(prompt: string, sources: ChunkRecord[], env: Env) {
+export async function generateAnswer(
+  prompt: string,
+  sources: ChunkRecord[],
+  env: Env,
+  conversation?: string
+) {
   const systemPrompt = [
     "You are a friendly, pragmatic EUI/ECL expert for frontend developers.",
     "Write in a warm, conversational tone with short paragraphs.",
@@ -137,11 +147,16 @@ export async function generateAnswer(prompt: string, sources: ChunkRecord[], env
     .join("\n\n");
 
   const userPrompt = [
+    conversation ? "Conversation so far:" : null,
+    conversation ? conversation : null,
+    conversation ? "" : null,
     `Question: ${prompt}`,
     "",
     "Sources:",
     sourceBlock
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -170,6 +185,33 @@ export async function generateAnswer(prompt: string, sources: ChunkRecord[], env
   return payload.choices?.[0]?.message?.content ?? "";
 }
 
+export function formatConversation(messages: ChatMessage[], prompt: string, maxMessages = 8) {
+  const filtered = messages
+    .filter((msg) => msg && (msg.role === "user" || msg.role === "assistant") && msg.content)
+    .map((msg) => ({
+      role: msg.role,
+      content: String(msg.content).trim()
+    }))
+    .filter((msg) => msg.content.length > 0);
+
+  if (filtered.length) {
+    const last = filtered[filtered.length - 1];
+    if (last.role === "user" && last.content === prompt.trim()) {
+      filtered.pop();
+    }
+  }
+
+  const recent = filtered.slice(-maxMessages);
+  if (!recent.length) return "";
+
+  return recent
+    .map((msg) => {
+      const label = msg.role === "user" ? "User" : "Assistant";
+      const content = msg.content.length > 800 ? `${msg.content.slice(0, 800)}...` : msg.content;
+      return `${label}: ${content}`;
+    })
+    .join("\n");
+}
 export function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
