@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RunMesh EUI Expert</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">
+          <span class="brand-mark">RM</span>
+          <div>
+            <div class="brand-title">RunMesh EUI Expert</div>
+            <div class="brand-sub">EUI / ECL 21.x grounded assistant</div>
+          </div>
+        </div>
+        <div class="topbar-meta">
+          <span class="pill">Live RAG</span>
+          <span class="meta">gpt-5.2</span>
+        </div>
+      </div>
+    </header>
+
+    <section class="hero">
+      <div class="hero-inner">
+        <h1>Ask about EUI/ECL components, APIs, and migration paths.</h1>
+        <p>Grounded answers with citations, tailored for builders who want quick, confident implementation guidance.</p>
+      </div>
+    </section>
+
+    <main class="grid">
+      <section class="card chat full">
+        <div class="card-header">
+          <h2>Expert Chat</h2>
+          <span id="chat-status" class="status">Ready</span>
+        </div>
+        <div class="status-row">
+          <span id="index-status" class="status">Index: Loading</span>
+        </div>
+        <div id="chat-log" class="chat-log">
+          <div class="chat-msg assistant">
+            <strong>RunMesh</strong>
+            <p>Ask about any EUI component, API, or quickstart step.</p>
+          </div>
+        </div>
+        <div class="suggestions">
+          <button class="suggestion-chip" data-prompt="Show a minimal Angular example for ecl-banner and list its inputs.">
+            ecl-banner quickstart
+          </button>
+          <button class="suggestion-chip" data-prompt="How do I migrate from EUI/ECL 20.x to 21.x? Give a checklist.">
+            Migration checklist
+          </button>
+          <button class="suggestion-chip" data-prompt="What are the design tokens for spacing and typography in 21.x?">
+            Design tokens
+          </button>
+          <button class="suggestion-chip" data-prompt="Which ECL components are available in 21.x and how do I import them?">
+            Component list + import
+          </button>
+          <button class="suggestion-chip" data-prompt="How do I theme EUI and override colors safely?">
+            Theming
+          </button>
+        </div>
+        <form id="chat-form">
+          <textarea id="chat-input" rows="4" placeholder="Ask about EUI/ECL APIs, Angular usage, tokens, or migration steps..."></textarea>
+          <div class="actions">
+            <button type="submit">Send</button>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <section class="about">
+      <div class="about-inner">
+        <h3>About RunMesh</h3>
+        <p>
+          RunMesh is an OpenAI-first JS/TS framework for building agentic apps with tools, structured output, streaming,
+          and memory. It helps frontend teams ship reliable AI features without glue code.
+        </p>
+        <div class="link-row">
+          <a href="https://www.npmjs.com/package/@runmesh/agent" target="_blank" rel="noreferrer">npm @runmesh/agent</a>
+          <a href="https://github.com/iluxu/RunMesh" target="_blank" rel="noreferrer">GitHub</a>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <p>RunMesh EUI RAG - gpt-5.2 - Local ingest required</p>
+    </footer>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

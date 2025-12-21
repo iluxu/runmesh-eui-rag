@@ -1,0 +1,7 @@
+name = "runmesh-eui-rag"
+compatibility_date = "2025-01-01"
+pages_build_output_dir = "public"
+
+[[r2_buckets]]
+binding = "EUI_RAG_BUCKET"
+bucket_name = "runmesh-eui-chunks"

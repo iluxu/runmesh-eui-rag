@@ -1,0 +1,23 @@
+{
+  "name": "runmesh-eui-rag",
+  "version": "0.1.0",
+  "private": false,
+  "description": "RunMesh EUI RAG: EUI/ECL 21.x expert chatbot with grounded citations.",
+  "license": "BSL-1.1",
+  "type": "module",
+  "scripts": {
+    "ingest": "tsx src/ingest.ts",
+    "start": "tsx src/server.ts",
+    "dev": "tsx watch src/server.ts"
+  },
+  "dependencies": {
+    "@runmesh/agent": "^0.1.0-alpha.1",
+    "@runmesh/core": "^0.1.0-alpha.1",
+    "@runmesh/memory": "^0.1.0-alpha.1",
+    "@runmesh/tools": "^0.1.0-alpha.1",
+    "cheerio": "^1.0.0-rc.12",
+    "playwright": "^1.50.1",
+    "tsx": "^4.19.2",
+    "zod": "^3.23.8"
+  }
+}
