@@ -127,14 +127,15 @@ export async function generateAnswer(
   prompt: string,
   sources: ChunkRecord[],
   env: Env,
-  conversation?: string
+  conversation?: ChatMessage[]
 ) {
   const systemPrompt = [
     "You are a friendly, pragmatic EUI/ECL expert for frontend developers.",
     "Write in a warm, conversational tone with short paragraphs.",
     "Use headings or bullets when it helps, and include code snippets when useful.",
-    "Answer using only the sources provided.",
-    "Always include a Sources section with links.",
+    "Answer using the sources provided for doc claims.",
+    "You may refer to the conversation history without citing sources.",
+    "Always include a Sources section with links for doc-based statements.",
     "If you cannot find the answer, say so and ask a clarifying question.",
     "Do not invent APIs or components."
   ].join("\n");
@@ -146,17 +147,13 @@ export async function generateAnswer(
     })
     .join("\n\n");
 
-  const userPrompt = [
-    conversation ? "Conversation so far:" : null,
-    conversation ? conversation : null,
-    conversation ? "" : null,
-    `Question: ${prompt}`,
-    "",
-    "Sources:",
-    sourceBlock
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const userPrompt = [`Question: ${prompt}`, "", "Sources:", sourceBlock].join("\n");
+
+  const chatMessages = [
+    { role: "system", content: systemPrompt },
+    ...(conversation ?? []),
+    { role: "user", content: userPrompt }
+  ];
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -167,10 +164,7 @@ export async function generateAnswer(
     body: JSON.stringify({
       model: env.OPENAI_MODEL ?? DEFAULT_MODEL,
       temperature: 0.2,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt }
-      ]
+      messages: chatMessages
     })
   });
 
@@ -185,7 +179,7 @@ export async function generateAnswer(
   return payload.choices?.[0]?.message?.content ?? "";
 }
 
-export function formatConversation(messages: ChatMessage[], prompt: string, maxMessages = 8) {
+export function sanitizeConversation(messages: ChatMessage[], prompt: string, maxMessages = 8) {
   const filtered = messages
     .filter((msg) => msg && (msg.role === "user" || msg.role === "assistant") && msg.content)
     .map((msg) => ({
@@ -202,15 +196,10 @@ export function formatConversation(messages: ChatMessage[], prompt: string, maxM
   }
 
   const recent = filtered.slice(-maxMessages);
-  if (!recent.length) return "";
-
-  return recent
-    .map((msg) => {
-      const label = msg.role === "user" ? "User" : "Assistant";
-      const content = msg.content.length > 800 ? `${msg.content.slice(0, 800)}...` : msg.content;
-      return `${label}: ${content}`;
-    })
-    .join("\n");
+  return recent.map((msg) => ({
+    role: msg.role,
+    content: msg.content.length > 800 ? `${msg.content.slice(0, 800)}...` : msg.content
+  }));
 }
 export function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {

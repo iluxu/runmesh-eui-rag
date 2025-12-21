@@ -212,6 +212,11 @@ body {
   color: var(--muted);
 }
 
+.chat-msg a {
+  color: var(--brand);
+  text-decoration: underline;
+}
+
 .inline-code {
   font-family: var(--mono);
   font-size: 0.85rem;

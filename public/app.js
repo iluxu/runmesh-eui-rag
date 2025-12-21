@@ -4,6 +4,7 @@ const chatLog = document.getElementById("chat-log");
 const chatStatus = document.getElementById("chat-status");
 const indexStatus = document.getElementById("index-status");
 const refreshIndexBtn = document.getElementById("refresh-index");
+const clearChatBtn = document.getElementById("clear-chat");
 const suggestionChips = document.querySelectorAll(".suggestion-chip");
 
 const sessionKey = "runmesh_eui_session";
@@ -76,7 +77,11 @@ function formatMarkdown(text) {
 
       const escaped = escapeHtml(part);
       const withInline = escaped.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
-      return withInline.replaceAll("\n", "<br />");
+      const withLinks = withInline.replace(
+        /(https?:\/\/[^\s<]+[^<.,:;"')\]\s])/g,
+        '<a href="$1" target="_blank" rel="noreferrer">$1</a>'
+      );
+      return withLinks.replaceAll("\n", "<br />");
     })
     .join("");
 }
@@ -141,6 +146,19 @@ if (chatForm) {
   });
 }
 
+if (chatInput && chatForm) {
+  chatInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      if (typeof chatForm.requestSubmit === "function") {
+        chatForm.requestSubmit();
+      } else {
+        chatForm.dispatchEvent(new Event("submit", { cancelable: true }));
+      }
+    }
+  });
+}
+
 async function refreshStatus() {
   if (!indexStatus) return;
   const res = await fetch("/api/status");
@@ -177,6 +195,14 @@ if (refreshIndexBtn) {
       return;
     }
     await refreshStatus();
+  });
+}
+
+if (clearChatBtn) {
+  clearChatBtn.addEventListener("click", () => {
+    conversation = [defaultGreeting];
+    saveHistory();
+    renderHistory();
   });
 }
 
