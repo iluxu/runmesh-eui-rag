@@ -16,6 +16,12 @@ export type ChatMessage = {
   content: string;
 };
 
+export type ProjectContext = {
+  name?: string;
+  text?: string;
+  truncated?: boolean;
+};
+
 export type Env = {
   OPENAI_API_KEY: string;
   OPENAI_MODEL?: string;
@@ -27,6 +33,7 @@ const DEFAULT_MODEL = "gpt-5.2";
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 12;
+const MAX_PROJECT_CHARS = 200_000;
 const SYSTEM_PROMPT = [
   "You are a friendly, pragmatic EUI/ECL expert for frontend developers.",
   "Write in a warm, conversational tone with short paragraphs.",
@@ -170,7 +177,27 @@ export function buildSystemPrompt() {
   return SYSTEM_PROMPT;
 }
 
-export function buildUserPrompt(prompt: string, sources: ChunkRecord[]) {
+export function formatProjectContext(project?: ProjectContext) {
+  const text = project?.text ? String(project.text).trim() : "";
+  if (!text) return "";
+
+  let trimmed = text;
+  let trimmedByServer = false;
+  if (trimmed.length > MAX_PROJECT_CHARS) {
+    trimmed = trimmed.slice(0, MAX_PROJECT_CHARS);
+    trimmedByServer = true;
+  }
+
+  const notes = [];
+  if (project?.name) notes.push(`File: ${project.name}`);
+  if (project?.truncated) notes.push("Note: truncated in browser.");
+  if (trimmedByServer) notes.push(`Note: truncated on server to ${MAX_PROJECT_CHARS} chars.`);
+
+  const header = ["Project context (user-provided).", ...notes].join("\n");
+  return [header, "-----", trimmed, "-----"].join("\n");
+}
+
+export function buildUserPrompt(prompt: string, sources: ChunkRecord[], project?: ProjectContext) {
   const sourceBlock = sources
     .map((source, index) => {
       const header = `[${index + 1}] ${source.title || "Untitled"} — ${source.url}`;
@@ -178,17 +205,24 @@ export function buildUserPrompt(prompt: string, sources: ChunkRecord[]) {
     })
     .join("\n\n");
 
-  return [`Question: ${prompt}`, "", "Sources:", sourceBlock].join("\n");
+  const projectBlock = formatProjectContext(project);
+  const parts = [`Question: ${prompt}`];
+  if (projectBlock) {
+    parts.push("", projectBlock);
+  }
+  parts.push("", "Sources:", sourceBlock);
+  return parts.join("\n");
 }
 
 export async function generateAnswer(
   prompt: string,
   sources: ChunkRecord[],
   env: Env,
-  conversation?: ChatMessage[]
+  conversation?: ChatMessage[],
+  project?: ProjectContext
 ) {
   const systemPrompt = buildSystemPrompt();
-  const userPrompt = buildUserPrompt(prompt, sources);
+  const userPrompt = buildUserPrompt(prompt, sources, project);
 
   const chatMessages = [
     { role: "system", content: systemPrompt },

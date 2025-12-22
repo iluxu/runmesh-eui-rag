@@ -70,6 +70,21 @@
           </button>
         </div>
         <form id="chat-form">
+          <div id="project-drop" class="project-upload">
+            <div class="project-title">Attach project text</div>
+            <div class="project-sub">Drop a single text file that contains your project. It will be added to your prompt.</div>
+            <div class="project-actions">
+              <input
+                id="project-file"
+                type="file"
+                accept="text/*,.txt,.md,.json,.yaml,.yml,.js,.jsx,.ts,.tsx,.css,.scss,.html"
+                hidden
+              />
+              <button type="button" id="project-browse" class="ghost">Browse file</button>
+              <button type="button" id="project-clear" class="ghost" disabled>Clear</button>
+            </div>
+            <div id="project-meta" class="project-meta muted">No file attached.</div>
+          </div>
           <textarea id="chat-input" rows="4" placeholder="Ask about EUI/ECL APIs, Angular usage, tokens, or migration steps..."></textarea>
           <div class="actions">
             <button type="submit">Send</button>

@@ -7,7 +7,7 @@ import {
   rankChunks,
   sanitizeConversation
 } from "./_shared";
-import type { ChatMessage, ChunkRecord, Env } from "./_shared";
+import type { ChatMessage, ChunkRecord, Env, ProjectContext } from "./_shared";
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   try {
@@ -15,6 +15,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
     const limit = Number(body.limit ?? 6);
     const sessionId = typeof body.sessionId === "string" ? body.sessionId : "anonymous";
+    const rawProject = body.project && typeof body.project === "object" ? (body.project as ProjectContext) : undefined;
+    const projectText = typeof rawProject?.text === "string" ? rawProject.text : "";
+    const project: ProjectContext | undefined = projectText
+      ? {
+          name: typeof rawProject?.name === "string" ? rawProject.name : undefined,
+          text: projectText,
+          truncated: rawProject?.truncated === true
+        }
+      : undefined;
 
     const rate = checkRateLimit(sessionId);
     if (!rate.ok) {
@@ -48,7 +57,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const rawMessages = Array.isArray(body.messages) ? body.messages : [];
     const messages = rawMessages.filter(Boolean) as ChatMessage[];
     const conversation = sanitizeConversation(messages, prompt);
-    const answer = await generateAnswer(prompt, sources, env, conversation);
+    const answer = await generateAnswer(prompt, sources, env, conversation, project);
     return jsonResponse({ response: answer, sources });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

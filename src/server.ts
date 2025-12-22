@@ -41,6 +41,13 @@ const SEED_URLS = (process.env.EUI_SEED_URLS ?? "")
   .split(",")
   .map((entry) => entry.trim())
   .filter(Boolean);
+const MAX_PROJECT_CHARS = 200_000;
+
+type ProjectContext = {
+  name?: string;
+  text?: string;
+  truncated?: boolean;
+};
 
 const memory = new InMemoryAdapter();
 
@@ -78,6 +85,32 @@ async function parseBody(req: http.IncomingMessage): Promise<Record<string, unkn
 function formatError(error: unknown): string {
   if (error instanceof Error) return error.message;
   return "Unknown error";
+}
+
+function formatProjectContext(project?: ProjectContext) {
+  const text = project?.text ? String(project.text).trim() : "";
+  if (!text) return "";
+
+  let trimmed = text;
+  let trimmedByServer = false;
+  if (trimmed.length > MAX_PROJECT_CHARS) {
+    trimmed = trimmed.slice(0, MAX_PROJECT_CHARS);
+    trimmedByServer = true;
+  }
+
+  const notes = [];
+  if (project?.name) notes.push(`File: ${project.name}`);
+  if (project?.truncated) notes.push("Note: truncated in browser.");
+  if (trimmedByServer) notes.push(`Note: truncated on server to ${MAX_PROJECT_CHARS} chars.`);
+
+  const header = ["Project context (user-provided).", ...notes].join("\n");
+  return [header, "-----", trimmed, "-----"].join("\n");
+}
+
+function buildPromptWithProject(prompt: string, project?: ProjectContext) {
+  const projectBlock = formatProjectContext(project);
+  if (!projectBlock) return prompt;
+  return [projectBlock, `Question: ${prompt}`].join("\n\n");
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -269,8 +302,19 @@ async function handleRefresh(_: http.IncomingMessage, res: http.ServerResponse) 
 
 async function handleAsk(req: http.IncomingMessage, res: http.ServerResponse) {
   const body = await parseBody(req);
-  const prompt = typeof body.prompt === "string" ? body.prompt : "What is EUI?";
+  const promptRaw = typeof body.prompt === "string" ? body.prompt.trim() : "";
+  const prompt = promptRaw || "What is EUI?";
   const sessionId = typeof body.sessionId === "string" ? body.sessionId : crypto.randomUUID();
+  const rawProject = body.project && typeof body.project === "object" ? (body.project as ProjectContext) : undefined;
+  const projectText = typeof rawProject?.text === "string" ? rawProject.text : "";
+  const project: ProjectContext | undefined = projectText
+    ? {
+        name: typeof rawProject?.name === "string" ? rawProject.name : undefined,
+        text: projectText,
+        truncated: rawProject?.truncated === true
+      }
+    : undefined;
+  const fullPrompt = buildPromptWithProject(prompt, project);
 
   if (!retriever) {
     jsonResponse(res, 500, { error: "Retriever not loaded. Index is empty." });
@@ -279,7 +323,7 @@ async function handleAsk(req: http.IncomingMessage, res: http.ServerResponse) {
 
   try {
     const agent = createAgentForSession(sessionId);
-    const result = await agent.run(prompt);
+    const result = await agent.run(fullPrompt);
     const text = result.response.choices[0]?.message?.content ?? "";
     jsonResponse(res, 200, { sessionId, response: text, steps: result.steps });
   } catch (error) {

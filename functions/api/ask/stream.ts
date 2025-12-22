@@ -8,7 +8,7 @@ import {
   rankChunks,
   sanitizeConversation
 } from "../_shared";
-import type { ChatMessage, ChunkRecord, Env } from "../_shared";
+import type { ChatMessage, ChunkRecord, Env, ProjectContext } from "../_shared";
 
 function sseHeaders() {
   return {
@@ -24,6 +24,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
     const limit = Number(body.limit ?? 6);
     const sessionId = typeof body.sessionId === "string" ? body.sessionId : "anonymous";
+    const rawProject = body.project && typeof body.project === "object" ? (body.project as ProjectContext) : undefined;
+    const projectText = typeof rawProject?.text === "string" ? rawProject.text : "";
+    const project: ProjectContext | undefined = projectText
+      ? {
+          name: typeof rawProject?.name === "string" ? rawProject.name : undefined,
+          text: projectText,
+          truncated: rawProject?.truncated === true
+        }
+      : undefined;
 
     if (!prompt) {
       return jsonResponse({ error: "Missing prompt." }, 400);
@@ -58,7 +67,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const messages = rawMessages.filter(Boolean) as ChatMessage[];
     const conversation = sanitizeConversation(messages, prompt);
     const systemPrompt = buildSystemPrompt();
-    const userPrompt = buildUserPrompt(prompt, sources);
+    const userPrompt = buildUserPrompt(prompt, sources, project);
 
     const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",

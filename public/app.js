@@ -6,12 +6,39 @@ const indexStatus = document.getElementById("index-status");
 const refreshIndexBtn = document.getElementById("refresh-index");
 const clearChatBtn = document.getElementById("clear-chat");
 const suggestionChips = document.querySelectorAll(".suggestion-chip");
+const projectDrop = document.getElementById("project-drop");
+const projectFileInput = document.getElementById("project-file");
+const projectMeta = document.getElementById("project-meta");
+const projectBrowse = document.getElementById("project-browse");
+const projectClear = document.getElementById("project-clear");
 
 const sessionKey = "runmesh_eui_session";
 const historyKey = "runmesh_eui_history";
 const fallbackId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 let sessionId = fallbackId;
 let conversation = [];
+const MAX_PROJECT_BYTES = 4 * 1024 * 1024;
+const MAX_PROJECT_CHARS = 200000;
+const allowedExtensions = new Set([
+  ".txt",
+  ".md",
+  ".markdown",
+  ".json",
+  ".yaml",
+  ".yml",
+  ".js",
+  ".jsx",
+  ".ts",
+  ".tsx",
+  ".css",
+  ".scss",
+  ".html"
+]);
+
+let projectText = "";
+let projectName = "";
+let projectSize = 0;
+let projectTruncated = false;
 
 let safeStorage = null;
 try {
@@ -50,6 +77,85 @@ function saveHistory() {
     safeStorage.setItem(historyKey, JSON.stringify(conversation));
   } catch {
     // Ignore storage failures.
+  }
+}
+
+function formatNumber(value) {
+  return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+function formatBytes(value) {
+  if (value < 1024) return `${formatNumber(value)} B`;
+  const kb = value / 1024;
+  if (kb < 1024) return `${formatNumber(Math.round(kb))} KB`;
+  const mb = kb / 1024;
+  if (mb < 1024) return `${formatNumber(Math.round(mb))} MB`;
+  const gb = mb / 1024;
+  return `${formatNumber(Math.round(gb))} GB`;
+}
+
+function setProjectMeta(text, isError = false) {
+  if (!projectMeta) return;
+  projectMeta.textContent = text;
+  projectMeta.classList.toggle("error", isError);
+}
+
+function resetProject() {
+  projectText = "";
+  projectName = "";
+  projectSize = 0;
+  projectTruncated = false;
+  setProjectMeta("No file attached.");
+  if (projectDrop) {
+    projectDrop.classList.remove("has-file");
+    projectDrop.classList.remove("drag-active");
+  }
+  if (projectClear) projectClear.disabled = true;
+}
+
+function isLikelyTextFile(file) {
+  if (!file) return false;
+  if (file.type && file.type.startsWith("text/")) return true;
+  const name = file.name || "";
+  const dot = name.lastIndexOf(".");
+  if (dot === -1) return false;
+  const ext = name.slice(dot).toLowerCase();
+  return allowedExtensions.has(ext);
+}
+
+async function readProjectFile(file) {
+  if (!file) return;
+  if (!isLikelyTextFile(file)) {
+    resetProject();
+    setProjectMeta("Unsupported file type. Use a text file export.", true);
+    return;
+  }
+  if (file.size > MAX_PROJECT_BYTES) {
+    resetProject();
+    setProjectMeta(`File too large. Max ${formatBytes(MAX_PROJECT_BYTES)}.`, true);
+    return;
+  }
+  try {
+    const text = await file.text();
+    const trimmed = text.length > MAX_PROJECT_CHARS ? text.slice(0, MAX_PROJECT_CHARS) : text;
+    if (!trimmed.trim()) {
+      resetProject();
+      setProjectMeta("File is empty.", true);
+      return;
+    }
+    projectText = trimmed;
+    projectName = file.name || "project.txt";
+    projectSize = file.size;
+    projectTruncated = text.length > MAX_PROJECT_CHARS;
+    const note = projectTruncated
+      ? `Truncated to ${formatNumber(MAX_PROJECT_CHARS)} chars.`
+      : `Loaded ${formatNumber(trimmed.length)} chars.`;
+    setProjectMeta(`${projectName} | ${formatBytes(projectSize)} | ${note}`);
+    if (projectDrop) projectDrop.classList.add("has-file");
+    if (projectClear) projectClear.disabled = false;
+  } catch {
+    resetProject();
+    setProjectMeta("Failed to read file.", true);
   }
 }
 
@@ -113,13 +219,76 @@ if (!conversation.length) {
 }
 renderHistory();
 
+if (projectDrop) {
+  const setDragActive = (active) => {
+    projectDrop.classList.toggle("drag-active", active);
+  };
+
+  projectDrop.addEventListener("dragenter", (event) => {
+    event.preventDefault();
+    setDragActive(true);
+  });
+
+  projectDrop.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    setDragActive(true);
+  });
+
+  projectDrop.addEventListener("dragleave", () => setDragActive(false));
+  projectDrop.addEventListener("dragend", () => setDragActive(false));
+
+  projectDrop.addEventListener("drop", (event) => {
+    event.preventDefault();
+    setDragActive(false);
+    const file = event.dataTransfer?.files?.[0];
+    if (file) {
+      readProjectFile(file);
+    }
+  });
+
+  projectDrop.addEventListener("click", (event) => {
+    const target = event.target;
+    if (target === projectBrowse || target === projectClear) return;
+    if (projectFileInput) projectFileInput.click();
+  });
+}
+
+if (projectBrowse) {
+  projectBrowse.addEventListener("click", () => {
+    if (projectFileInput) projectFileInput.click();
+  });
+}
+
+if (projectClear) {
+  projectClear.addEventListener("click", () => {
+    resetProject();
+  });
+}
+
+if (projectFileInput) {
+  projectFileInput.addEventListener("change", (event) => {
+    const file = event.target?.files?.[0];
+    if (file) {
+      readProjectFile(file);
+    }
+    projectFileInput.value = "";
+  });
+}
+
 if (chatForm) {
   chatForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const prompt = chatInput.value.trim();
     if (!prompt) return;
-    addMessage("user", prompt);
-    conversation.push({ role: "user", content: prompt });
+    const projectNote = projectText
+      ? `\n\n[Project attached: ${projectName || "project.txt"} (${formatBytes(projectSize)}, ${formatNumber(
+          projectText.length
+        )} chars${projectTruncated ? ", truncated" : ""})]`
+      : "";
+    const displayPrompt = `${prompt}${projectNote}`;
+    addMessage("user", displayPrompt);
+    conversation.push({ role: "user", content: displayPrompt });
     saveHistory();
     chatStatus.textContent = "Working";
 
@@ -131,10 +300,14 @@ if (chatForm) {
     assistantMsg.classList.add("streaming");
     let assistantText = "";
 
+    const projectPayload = projectText
+      ? { name: projectName || "project.txt", text: projectText, truncated: projectTruncated }
+      : undefined;
+
     const res = await fetch("/api/ask/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt, sessionId, messages: outbound })
+      body: JSON.stringify({ prompt, sessionId, messages: outbound, project: projectPayload })
     });
 
     if (!res.ok || !res.body || res.headers.get("content-type")?.includes("application/json")) {
