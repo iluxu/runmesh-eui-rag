@@ -85,6 +85,16 @@
             </div>
             <div id="project-meta" class="project-meta muted">No file attached.</div>
           </div>
+          <div id="image-drop" class="image-upload">
+            <div class="image-title">Attach images</div>
+            <div class="image-sub">Drop up to 3 PNG/JPG/WebP screenshots for visual context.</div>
+            <div class="image-actions">
+              <input id="image-files" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden />
+              <button type="button" id="image-browse" class="ghost">Browse images</button>
+              <button type="button" id="image-clear" class="ghost" disabled>Clear</button>
+            </div>
+            <div id="image-meta" class="image-meta muted">No images attached.</div>
+          </div>
           <textarea id="chat-input" rows="4" placeholder="Ask about EUI/ECL APIs, Angular usage, tokens, or migration steps..."></textarea>
           <div class="actions">
             <button type="submit">Send</button>

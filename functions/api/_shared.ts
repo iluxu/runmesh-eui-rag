@@ -21,6 +21,12 @@ export type ProjectContext = {
   text?: string;
 };
 
+export type ImageInput = {
+  name?: string;
+  type?: string;
+  dataUrl?: string;
+};
+
 export type Env = {
   OPENAI_API_KEY: string;
   OPENAI_MODEL?: string;
@@ -32,6 +38,9 @@ const DEFAULT_MODEL = "gpt-5.2";
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 12;
+const MAX_IMAGE_COUNT = 3;
+const MAX_IMAGE_DATA_URL_LENGTH = 8_000_000;
+const allowedImagePrefixes = ["data:image/png;base64,", "data:image/jpeg;base64,", "data:image/webp;base64,"];
 const SYSTEM_PROMPT = [
   "You are a friendly, pragmatic EUI/ECL expert for frontend developers.",
   "Write in a warm, conversational tone with short paragraphs.",
@@ -175,6 +184,25 @@ export function buildSystemPrompt() {
   return SYSTEM_PROMPT;
 }
 
+export function sanitizeImages(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const images: string[] = [];
+  for (const item of raw) {
+    let dataUrl = "";
+    if (typeof item === "string") {
+      dataUrl = item;
+    } else if (item && typeof item === "object" && typeof (item as ImageInput).dataUrl === "string") {
+      dataUrl = (item as ImageInput).dataUrl || "";
+    }
+    if (!dataUrl) continue;
+    if (!allowedImagePrefixes.some((prefix) => dataUrl.startsWith(prefix))) continue;
+    if (dataUrl.length > MAX_IMAGE_DATA_URL_LENGTH) continue;
+    images.push(dataUrl);
+    if (images.length >= MAX_IMAGE_COUNT) break;
+  }
+  return images;
+}
+
 export function formatProjectContext(project?: ProjectContext) {
   const text = project?.text ? String(project.text).trim() : "";
   if (!text) return "";
@@ -203,20 +231,38 @@ export function buildUserPrompt(prompt: string, sources: ChunkRecord[], project?
   return parts.join("\n");
 }
 
+export function buildUserContent(
+  prompt: string,
+  sources: ChunkRecord[],
+  project?: ProjectContext,
+  images?: string[]
+) {
+  const text = buildUserPrompt(prompt, sources, project);
+  if (!images || !images.length) return text;
+  return [
+    { type: "text", text },
+    ...images.map((url) => ({
+      type: "image_url",
+      image_url: { url }
+    }))
+  ];
+}
+
 export async function generateAnswer(
   prompt: string,
   sources: ChunkRecord[],
   env: Env,
   conversation?: ChatMessage[],
-  project?: ProjectContext
+  project?: ProjectContext,
+  images?: string[]
 ) {
   const systemPrompt = buildSystemPrompt();
-  const userPrompt = buildUserPrompt(prompt, sources, project);
+  const userContent = buildUserContent(prompt, sources, project, images);
 
   const chatMessages = [
     { role: "system", content: systemPrompt },
     ...(conversation ?? []),
-    { role: "user", content: userPrompt }
+    { role: "user", content: userContent }
   ];
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {

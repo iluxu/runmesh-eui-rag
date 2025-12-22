@@ -11,6 +11,11 @@ const projectFileInput = document.getElementById("project-file");
 const projectMeta = document.getElementById("project-meta");
 const projectBrowse = document.getElementById("project-browse");
 const projectClear = document.getElementById("project-clear");
+const imageDrop = document.getElementById("image-drop");
+const imageFilesInput = document.getElementById("image-files");
+const imageMeta = document.getElementById("image-meta");
+const imageBrowse = document.getElementById("image-browse");
+const imageClear = document.getElementById("image-clear");
 
 const sessionKey = "runmesh_eui_session";
 const historyKey = "runmesh_eui_history";
@@ -18,6 +23,8 @@ const fallbackId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 let sessionId = fallbackId;
 let conversation = [];
 const MAX_PROJECT_BYTES = 4 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
+const MAX_IMAGES = 3;
 const allowedExtensions = new Set([
   ".txt",
   ".md",
@@ -33,10 +40,12 @@ const allowedExtensions = new Set([
   ".scss",
   ".html"
 ]);
+const allowedImageTypes = new Set(["image/png", "image/jpeg", "image/webp"]);
 
 let projectText = "";
 let projectName = "";
 let projectSize = 0;
+let imageItems = [];
 
 let safeStorage = null;
 try {
@@ -98,6 +107,12 @@ function setProjectMeta(text, isError = false) {
   projectMeta.classList.toggle("error", isError);
 }
 
+function setImageMeta(text, isError = false) {
+  if (!imageMeta) return;
+  imageMeta.textContent = text;
+  imageMeta.classList.toggle("error", isError);
+}
+
 function resetProject() {
   projectText = "";
   projectName = "";
@@ -110,6 +125,16 @@ function resetProject() {
   if (projectClear) projectClear.disabled = true;
 }
 
+function resetImages() {
+  imageItems = [];
+  setImageMeta("No images attached.");
+  if (imageDrop) {
+    imageDrop.classList.remove("has-file");
+    imageDrop.classList.remove("drag-active");
+  }
+  if (imageClear) imageClear.disabled = true;
+}
+
 function isLikelyTextFile(file) {
   if (!file) return false;
   if (file.type && file.type.startsWith("text/")) return true;
@@ -118,6 +143,25 @@ function isLikelyTextFile(file) {
   if (dot === -1) return false;
   const ext = name.slice(dot).toLowerCase();
   return allowedExtensions.has(ext);
+}
+
+function isSupportedImage(file) {
+  if (!file) return false;
+  if (file.type && allowedImageTypes.has(file.type)) return true;
+  const name = file.name || "";
+  const dot = name.lastIndexOf(".");
+  if (dot === -1) return false;
+  const ext = name.slice(dot).toLowerCase();
+  return ext === ".png" || ext === ".jpg" || ext === ".jpeg" || ext === ".webp";
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("read failed"));
+    reader.readAsDataURL(file);
+  });
 }
 
 async function readProjectFile(file) {
@@ -149,6 +193,66 @@ async function readProjectFile(file) {
   } catch {
     resetProject();
     setProjectMeta("Failed to read file.", true);
+  }
+}
+
+function summarizeImages(items, hadOverflow) {
+  const totalSize = items.reduce((sum, item) => sum + item.size, 0);
+  const names = items.map((item) => item.name).slice(0, 2).join(", ");
+  const extra = items.length > 2 ? ` +${items.length - 2} more` : "";
+  const overflow = hadOverflow ? ` | Limited to ${MAX_IMAGES} images.` : "";
+  return `${items.length} image${items.length === 1 ? "" : "s"} | ${formatBytes(totalSize)} total | ${names}${extra}${overflow}`;
+}
+
+async function readImageFiles(fileList) {
+  const files = Array.from(fileList || []);
+  if (!files.length) return;
+  const selected = files.slice(0, MAX_IMAGES);
+  const hadOverflow = files.length > MAX_IMAGES;
+  const errors = [];
+  const items = [];
+
+  for (const file of selected) {
+    if (!isSupportedImage(file)) {
+      errors.push(`${file.name || "image"} is not supported`);
+      continue;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      errors.push(`${file.name || "image"} is too large`);
+      continue;
+    }
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      if (typeof dataUrl === "string" && dataUrl.startsWith("data:image/")) {
+        items.push({
+          name: file.name || "image",
+          size: file.size,
+          type: file.type || "image",
+          dataUrl
+        });
+      } else {
+        errors.push(`${file.name || "image"} could not be read`);
+      }
+    } catch {
+      errors.push(`${file.name || "image"} could not be read`);
+    }
+  }
+
+  if (!items.length) {
+    resetImages();
+    const message = errors.length
+      ? `No images attached. ${errors[0]}.`
+      : "No images attached.";
+    setImageMeta(message, true);
+    return;
+  }
+
+  imageItems = items;
+  setImageMeta(summarizeImages(items, hadOverflow));
+  if (imageDrop) imageDrop.classList.add("has-file");
+  if (imageClear) imageClear.disabled = false;
+  if (errors.length) {
+    setImageMeta(`${summarizeImages(items, hadOverflow)} | Some files were skipped.`, true);
   }
 }
 
@@ -308,6 +412,63 @@ if (projectFileInput) {
   });
 }
 
+if (imageDrop) {
+  const setDragActive = (active) => {
+    imageDrop.classList.toggle("drag-active", active);
+  };
+
+  imageDrop.addEventListener("dragenter", (event) => {
+    event.preventDefault();
+    setDragActive(true);
+  });
+
+  imageDrop.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    setDragActive(true);
+  });
+
+  imageDrop.addEventListener("dragleave", () => setDragActive(false));
+  imageDrop.addEventListener("dragend", () => setDragActive(false));
+
+  imageDrop.addEventListener("drop", (event) => {
+    event.preventDefault();
+    setDragActive(false);
+    const files = event.dataTransfer?.files;
+    if (files && files.length) {
+      readImageFiles(files);
+    }
+  });
+
+  imageDrop.addEventListener("click", (event) => {
+    const target = event.target;
+    if (target === imageBrowse || target === imageClear) return;
+    if (imageFilesInput) imageFilesInput.click();
+  });
+}
+
+if (imageBrowse) {
+  imageBrowse.addEventListener("click", () => {
+    if (imageFilesInput) imageFilesInput.click();
+  });
+}
+
+if (imageClear) {
+  imageClear.addEventListener("click", () => {
+    resetImages();
+  });
+}
+
+if (imageFilesInput) {
+  imageFilesInput.addEventListener("change", (event) => {
+    const files = event.target?.files;
+    if (files && files.length) {
+      readImageFiles(files);
+    }
+    imageFilesInput.value = "";
+  });
+}
+
 if (chatForm) {
   chatForm.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -318,7 +479,8 @@ if (chatForm) {
           projectText.length
         )} chars)]`
       : "";
-    const displayPrompt = `${prompt}${projectNote}`;
+    const imageNote = imageItems.length ? `\n\n[Images attached: ${imageItems.length}]` : "";
+    const displayPrompt = `${prompt}${projectNote}${imageNote}`;
     addMessage("user", displayPrompt);
     conversation.push({ role: "user", content: displayPrompt });
     saveHistory();
@@ -333,11 +495,18 @@ if (chatForm) {
     let assistantText = "";
 
     const projectPayload = projectText ? { name: projectName || "project.txt", text: projectText } : undefined;
+    const imagePayload = imageItems.length
+      ? imageItems.map((item) => ({
+          name: item.name,
+          type: item.type,
+          dataUrl: item.dataUrl
+        }))
+      : undefined;
 
     const res = await fetch("/api/ask/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt, sessionId, messages: outbound, project: projectPayload })
+      body: JSON.stringify({ prompt, sessionId, messages: outbound, project: projectPayload, images: imagePayload })
     });
 
     if (!res.ok || !res.body || res.headers.get("content-type")?.includes("application/json")) {

@@ -315,7 +315,8 @@ textarea:focus {
   box-shadow: 0 0 0 3px rgba(0, 51, 153, 0.12);
 }
 
-.project-upload {
+.project-upload,
+.image-upload {
   margin-top: 0.4rem;
   border-radius: 14px;
   border: 1px dashed rgba(0, 51, 153, 0.3);
@@ -326,43 +327,51 @@ textarea:focus {
   cursor: pointer;
 }
 
-.project-upload.drag-active {
+.project-upload.drag-active,
+.image-upload.drag-active {
   border-color: var(--brand);
   background: var(--brand-soft);
 }
 
-.project-upload.has-file {
+.project-upload.has-file,
+.image-upload.has-file {
   border-style: solid;
 }
 
-.project-title {
+.project-title,
+.image-title {
   font-weight: 600;
   font-size: 0.95rem;
 }
 
-.project-sub {
+.project-sub,
+.image-sub {
   font-size: 0.82rem;
   color: var(--muted);
 }
 
-.project-actions {
+.project-actions,
+.image-actions {
   display: flex;
   gap: 0.6rem;
   flex-wrap: wrap;
 }
 
-.project-actions button {
+.project-actions button,
+.image-actions button {
   padding: 0.45rem 0.9rem;
   font-size: 0.85rem;
 }
 
-.project-meta {
+.project-meta,
+.image-meta {
   font-family: var(--mono);
   font-size: 0.78rem;
   color: var(--muted);
 }
 
-.project-meta.error {
+.project-meta.error,
+.image-meta.error {
   color: #b91c1c;
 }
 

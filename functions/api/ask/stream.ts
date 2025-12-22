@@ -1,14 +1,15 @@
 import {
   buildSystemPrompt,
-  buildUserPrompt,
+  buildUserContent,
   checkRateLimit,
   embedQuery,
   jsonResponse,
   loadChunks,
   rankChunks,
-  sanitizeConversation
+  sanitizeConversation,
+  sanitizeImages
 } from "../_shared";
-import type { ChatMessage, ChunkRecord, Env, ProjectContext } from "../_shared";
+import type { ChatMessage, ChunkRecord, Env, ImageInput, ProjectContext } from "../_shared";
 
 function sseHeaders() {
   return {
@@ -26,6 +27,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const sessionId = typeof body.sessionId === "string" ? body.sessionId : "anonymous";
     const rawProject = body.project && typeof body.project === "object" ? (body.project as ProjectContext) : undefined;
     const projectText = typeof rawProject?.text === "string" ? rawProject.text : "";
+    const rawImages = Array.isArray(body.images) ? (body.images as ImageInput[]) : [];
+    const images = sanitizeImages(rawImages);
     const project: ProjectContext | undefined = projectText
       ? {
           name: typeof rawProject?.name === "string" ? rawProject.name : undefined,
@@ -66,7 +69,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const messages = rawMessages.filter(Boolean) as ChatMessage[];
     const conversation = sanitizeConversation(messages, prompt);
     const systemPrompt = buildSystemPrompt();
-    const userPrompt = buildUserPrompt(prompt, sources, project);
+    const userContent = buildUserContent(prompt, sources, project, images);
 
     const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -78,7 +81,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         model: env.OPENAI_MODEL ?? "gpt-5.2",
         temperature: 0.2,
         stream: true,
-        messages: [{ role: "system", content: systemPrompt }, ...conversation, { role: "user", content: userPrompt }]
+        messages: [{ role: "system", content: systemPrompt }, ...conversation, { role: "user", content: userContent }]
       })
     });
 
