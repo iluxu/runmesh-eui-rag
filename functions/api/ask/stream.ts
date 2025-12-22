@@ -29,8 +29,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const project: ProjectContext | undefined = projectText
       ? {
           name: typeof rawProject?.name === "string" ? rawProject.name : undefined,
-          text: projectText,
-          truncated: rawProject?.truncated === true
+          text: projectText
         }
       : undefined;
 

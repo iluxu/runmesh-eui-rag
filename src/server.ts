@@ -41,12 +41,9 @@ const SEED_URLS = (process.env.EUI_SEED_URLS ?? "")
   .split(",")
   .map((entry) => entry.trim())
   .filter(Boolean);
-const MAX_PROJECT_CHARS = 200_000;
-
 type ProjectContext = {
   name?: string;
   text?: string;
-  truncated?: boolean;
 };
 
 const memory = new InMemoryAdapter();
@@ -91,20 +88,11 @@ function formatProjectContext(project?: ProjectContext) {
   const text = project?.text ? String(project.text).trim() : "";
   if (!text) return "";
 
-  let trimmed = text;
-  let trimmedByServer = false;
-  if (trimmed.length > MAX_PROJECT_CHARS) {
-    trimmed = trimmed.slice(0, MAX_PROJECT_CHARS);
-    trimmedByServer = true;
-  }
-
   const notes = [];
   if (project?.name) notes.push(`File: ${project.name}`);
-  if (project?.truncated) notes.push("Note: truncated in browser.");
-  if (trimmedByServer) notes.push(`Note: truncated on server to ${MAX_PROJECT_CHARS} chars.`);
 
   const header = ["Project context (user-provided).", ...notes].join("\n");
-  return [header, "-----", trimmed, "-----"].join("\n");
+  return [header, "-----", text, "-----"].join("\n");
 }
 
 function buildPromptWithProject(prompt: string, project?: ProjectContext) {
@@ -310,8 +298,7 @@ async function handleAsk(req: http.IncomingMessage, res: http.ServerResponse) {
   const project: ProjectContext | undefined = projectText
     ? {
         name: typeof rawProject?.name === "string" ? rawProject.name : undefined,
-        text: projectText,
-        truncated: rawProject?.truncated === true
+        text: projectText
       }
     : undefined;
   const fullPrompt = buildPromptWithProject(prompt, project);

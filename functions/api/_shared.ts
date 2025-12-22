@@ -19,7 +19,6 @@ export type ChatMessage = {
 export type ProjectContext = {
   name?: string;
   text?: string;
-  truncated?: boolean;
 };
 
 export type Env = {
@@ -33,7 +32,6 @@ const DEFAULT_MODEL = "gpt-5.2";
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 12;
-const MAX_PROJECT_CHARS = 200_000;
 const SYSTEM_PROMPT = [
   "You are a friendly, pragmatic EUI/ECL expert for frontend developers.",
   "Write in a warm, conversational tone with short paragraphs.",
@@ -181,20 +179,11 @@ export function formatProjectContext(project?: ProjectContext) {
   const text = project?.text ? String(project.text).trim() : "";
   if (!text) return "";
 
-  let trimmed = text;
-  let trimmedByServer = false;
-  if (trimmed.length > MAX_PROJECT_CHARS) {
-    trimmed = trimmed.slice(0, MAX_PROJECT_CHARS);
-    trimmedByServer = true;
-  }
-
   const notes = [];
   if (project?.name) notes.push(`File: ${project.name}`);
-  if (project?.truncated) notes.push("Note: truncated in browser.");
-  if (trimmedByServer) notes.push(`Note: truncated on server to ${MAX_PROJECT_CHARS} chars.`);
 
   const header = ["Project context (user-provided).", ...notes].join("\n");
-  return [header, "-----", trimmed, "-----"].join("\n");
+  return [header, "-----", text, "-----"].join("\n");
 }
 
 export function buildUserPrompt(prompt: string, sources: ChunkRecord[], project?: ProjectContext) {
@@ -254,7 +243,7 @@ export async function generateAnswer(
   return payload.choices?.[0]?.message?.content ?? "";
 }
 
-export function sanitizeConversation(messages: ChatMessage[], prompt: string, maxMessages = 8) {
+export function sanitizeConversation(messages: ChatMessage[], prompt: string, maxMessages = 20) {
   const filtered = messages
     .filter((msg) => msg && (msg.role === "user" || msg.role === "assistant") && msg.content)
     .map((msg) => ({
@@ -273,7 +262,7 @@ export function sanitizeConversation(messages: ChatMessage[], prompt: string, ma
   const recent = filtered.slice(-maxMessages);
   return recent.map((msg) => ({
     role: msg.role,
-    content: msg.content.length > 800 ? `${msg.content.slice(0, 800)}...` : msg.content
+    content: msg.content.length > 12000 ? `${msg.content.slice(0, 12000)}...` : msg.content
   }));
 }
 export function jsonResponse(payload: unknown, status = 200) {

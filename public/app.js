@@ -18,7 +18,6 @@ const fallbackId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 let sessionId = fallbackId;
 let conversation = [];
 const MAX_PROJECT_BYTES = 4 * 1024 * 1024;
-const MAX_PROJECT_CHARS = 200000;
 const allowedExtensions = new Set([
   ".txt",
   ".md",
@@ -38,7 +37,6 @@ const allowedExtensions = new Set([
 let projectText = "";
 let projectName = "";
 let projectSize = 0;
-let projectTruncated = false;
 
 let safeStorage = null;
 try {
@@ -104,7 +102,6 @@ function resetProject() {
   projectText = "";
   projectName = "";
   projectSize = 0;
-  projectTruncated = false;
   setProjectMeta("No file attached.");
   if (projectDrop) {
     projectDrop.classList.remove("has-file");
@@ -137,19 +134,15 @@ async function readProjectFile(file) {
   }
   try {
     const text = await file.text();
-    const trimmed = text.length > MAX_PROJECT_CHARS ? text.slice(0, MAX_PROJECT_CHARS) : text;
-    if (!trimmed.trim()) {
+    if (!text.trim()) {
       resetProject();
       setProjectMeta("File is empty.", true);
       return;
     }
-    projectText = trimmed;
+    projectText = text;
     projectName = file.name || "project.txt";
     projectSize = file.size;
-    projectTruncated = text.length > MAX_PROJECT_CHARS;
-    const note = projectTruncated
-      ? `Truncated to ${formatNumber(MAX_PROJECT_CHARS)} chars.`
-      : `Loaded ${formatNumber(trimmed.length)} chars.`;
+    const note = `Loaded ${formatNumber(text.length)} chars.`;
     setProjectMeta(`${projectName} | ${formatBytes(projectSize)} | ${note}`);
     if (projectDrop) projectDrop.classList.add("has-file");
     if (projectClear) projectClear.disabled = false;
@@ -323,7 +316,7 @@ if (chatForm) {
     const projectNote = projectText
       ? `\n\n[Project attached: ${projectName || "project.txt"} (${formatBytes(projectSize)}, ${formatNumber(
           projectText.length
-        )} chars${projectTruncated ? ", truncated" : ""})]`
+        )} chars)]`
       : "";
     const displayPrompt = `${prompt}${projectNote}`;
     addMessage("user", displayPrompt);
@@ -339,9 +332,7 @@ if (chatForm) {
     assistantMsg.classList.add("streaming");
     let assistantText = "";
 
-    const projectPayload = projectText
-      ? { name: projectName || "project.txt", text: projectText, truncated: projectTruncated }
-      : undefined;
+    const projectPayload = projectText ? { name: projectName || "project.txt", text: projectText } : undefined;
 
     const res = await fetch("/api/ask/stream", {
       method: "POST",
