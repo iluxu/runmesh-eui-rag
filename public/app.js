@@ -178,7 +178,9 @@ function formatMarkdown(text) {
         const lang = lines[0]?.trim() ?? "";
         const code = lines.length > 1 ? lines.slice(1).join("\n") : part;
         const langAttr = lang ? ` data-lang="${escapeHtml(lang)}"` : "";
-        return `<pre class="code-block"${langAttr}><code>${escapeHtml(code)}</code></pre>`;
+        return `<pre class="code-block"${langAttr}><button type="button" class="copy-code">Copy</button><code>${escapeHtml(
+          code
+        )}</code></pre>`;
       }
 
       const escaped = escapeHtml(part);
@@ -205,6 +207,43 @@ function renderHistory() {
   if (!chatLog) return;
   chatLog.innerHTML = "";
   conversation.forEach((msg) => addMessage(msg.role, msg.content));
+}
+
+if (chatLog) {
+  chatLog.addEventListener("click", async (event) => {
+    const target = event.target;
+    const button = target?.closest?.(".copy-code");
+    if (!button) return;
+    const block = button.closest(".code-block");
+    const codeEl = block?.querySelector("code");
+    const code = codeEl?.innerText ?? "";
+    if (!code) return;
+
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(code);
+      } else {
+        const temp = document.createElement("textarea");
+        temp.value = code;
+        temp.setAttribute("readonly", "true");
+        temp.style.position = "absolute";
+        temp.style.left = "-9999px";
+        document.body.appendChild(temp);
+        temp.select();
+        document.execCommand("copy");
+        document.body.removeChild(temp);
+      }
+      button.textContent = "Copied";
+      setTimeout(() => {
+        button.textContent = "Copy";
+      }, 1400);
+    } catch {
+      button.textContent = "Failed";
+      setTimeout(() => {
+        button.textContent = "Copy";
+      }, 1400);
+    }
+  });
 }
 
 const defaultGreeting = {

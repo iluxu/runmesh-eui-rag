@@ -252,6 +252,34 @@ body {
   position: relative;
 }
 
+.code-block .copy-code {
+  position: absolute;
+  top: 0.55rem;
+  left: 0.6rem;
+  border-radius: 999px;
+  border: 1px solid rgba(226, 232, 240, 0.2);
+  background: rgba(15, 23, 42, 0.6);
+  color: rgba(226, 232, 240, 0.85);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  padding: 0.2rem 0.5rem;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: none;
+  font-family: var(--mono);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.code-block .copy-code:hover {
+  opacity: 1;
+  transform: translateY(-1px);
+  box-shadow: none;
+}
+
+.code-block .copy-code:active {
+  transform: translateY(0);
+}
+
 .code-block::before {
   content: attr(data-lang);
   position: absolute;
