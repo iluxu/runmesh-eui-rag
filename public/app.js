@@ -204,11 +204,17 @@ function summarizeImages(items, hadOverflow) {
   return `${items.length} image${items.length === 1 ? "" : "s"} | ${formatBytes(totalSize)} total | ${names}${extra}${overflow}`;
 }
 
-async function readImageFiles(fileList) {
+async function addImageFiles(fileList, { append } = { append: false }) {
   const files = Array.from(fileList || []);
   if (!files.length) return;
-  const selected = files.slice(0, MAX_IMAGES);
-  const hadOverflow = files.length > MAX_IMAGES;
+  const base = append ? imageItems.slice() : [];
+  const available = MAX_IMAGES - base.length;
+  if (available <= 0) {
+    setImageMeta(`Already at ${MAX_IMAGES} images.`, true);
+    return;
+  }
+  const selected = files.slice(0, available);
+  const hadOverflow = files.length > available;
   const errors = [];
   const items = [];
 
@@ -238,7 +244,9 @@ async function readImageFiles(fileList) {
     }
   }
 
-  if (!items.length) {
+  const nextItems = base.concat(items);
+
+  if (!nextItems.length) {
     resetImages();
     const message = errors.length
       ? `No images attached. ${errors[0]}.`
@@ -247,12 +255,12 @@ async function readImageFiles(fileList) {
     return;
   }
 
-  imageItems = items;
-  setImageMeta(summarizeImages(items, hadOverflow));
+  imageItems = nextItems;
+  setImageMeta(summarizeImages(nextItems, hadOverflow));
   if (imageDrop) imageDrop.classList.add("has-file");
   if (imageClear) imageClear.disabled = false;
   if (errors.length) {
-    setImageMeta(`${summarizeImages(items, hadOverflow)} | Some files were skipped.`, true);
+    setImageMeta(`${summarizeImages(nextItems, hadOverflow)} | Some files were skipped.`, true);
   }
 }
 
@@ -436,7 +444,7 @@ if (imageDrop) {
     setDragActive(false);
     const files = event.dataTransfer?.files;
     if (files && files.length) {
-      readImageFiles(files);
+      addImageFiles(files, { append: false });
     }
   });
 
@@ -463,11 +471,30 @@ if (imageFilesInput) {
   imageFilesInput.addEventListener("change", (event) => {
     const files = event.target?.files;
     if (files && files.length) {
-      readImageFiles(files);
+      addImageFiles(files, { append: false });
     }
     imageFilesInput.value = "";
   });
 }
+
+function extractClipboardImages(event) {
+  const items = event.clipboardData?.items ? Array.from(event.clipboardData.items) : [];
+  if (!items.length) return [];
+  const files = [];
+  for (const item of items) {
+    if (item.kind === "file") {
+      const file = item.getAsFile();
+      if (file) files.push(file);
+    }
+  }
+  return files;
+}
+
+document.addEventListener("paste", (event) => {
+  const files = extractClipboardImages(event);
+  if (!files.length) return;
+  addImageFiles(files, { append: true });
+});
 
 if (chatForm) {
   chatForm.addEventListener("submit", async (event) => {

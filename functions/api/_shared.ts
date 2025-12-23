@@ -105,11 +105,23 @@ export async function loadChunks(env: Env): Promise<ChunkWithNorm[]> {
     return chunks;
   })();
 
-  return loadingPromise;
+  try {
+    return await loadingPromise;
+  } finally {
+    loadingPromise = null;
+  }
 }
 
 export function getMeta() {
   return cachedMeta;
+}
+
+export function getChunkCacheState() {
+  return {
+    ready: Boolean(cachedChunks),
+    loading: Boolean(loadingPromise),
+    chunks: cachedChunks?.length ?? 0
+  };
 }
 
 export function rankChunks(chunks: ChunkWithNorm[], queryEmbedding: number[], limit: number) {
