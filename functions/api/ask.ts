@@ -1,12 +1,16 @@
 import {
   checkRateLimit,
+  detectIntent,
   embedQuery,
+  expandQuery,
   generateAnswer,
+  hasInlineCitations,
   jsonResponse,
   loadChunks,
   rankChunks,
   sanitizeConversation,
-  sanitizeImages
+  sanitizeImages,
+  selectDiverse
 } from "./_shared";
 import type { ChatMessage, ChunkRecord, Env, ImageInput, ProjectContext } from "./_shared";
 
@@ -44,14 +48,63 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
 
     const chunks = await loadChunks(env);
+    const intent = detectIntent(prompt);
+    const finalLimit = intent === "debug" ? 8 : Math.min(Math.max(limit, 1), 10);
+    const preferredKinds =
+      intent === "debug"
+        ? ["example", "faq"]
+        : intent === "api"
+        ? ["api"]
+        : intent === "howto"
+        ? ["example"]
+        : undefined;
+
+    const preferredVersion = env.EUI_PREFERRED_VERSION ?? env.EUI_DOC_VERSION;
     const embedding = await embedQuery(prompt, env);
-    const top = rankChunks(chunks, embedding, Math.min(Math.max(limit, 1), 8));
+    const expanded = expandQuery(prompt);
+    const expandedEmbedding = expanded !== prompt ? await embedQuery(expanded, env) : null;
+
+    const baseTop = rankChunks(chunks, prompt, embedding, {
+      limit: finalLimit * 3,
+      preferredVersion,
+      preferredKinds
+    });
+    const expandedTop = expandedEmbedding
+      ? rankChunks(chunks, expanded, expandedEmbedding, {
+          limit: finalLimit * 3,
+          preferredVersion,
+          preferredKinds
+        })
+      : [];
+
+    const merged = new Map<string, { chunk: (typeof baseTop)[number]["chunk"]; score: number }>();
+    [...baseTop, ...expandedTop].forEach((item) => {
+      const existing = merged.get(item.chunk.id);
+      if (!existing || item.score > existing.score) {
+        merged.set(item.chunk.id, item);
+      }
+    });
+
+    const mergedList = Array.from(merged.values()).sort((a, b) => b.score - a.score);
+    const top = selectDiverse(mergedList, {
+      limit: finalLimit,
+      preferredVersion,
+      preferredKinds
+    });
 
     const sources: ChunkRecord[] = top.map(({ chunk }) => ({
       id: chunk.id,
       url: chunk.url,
       title: chunk.title,
       section: chunk.section,
+      sectionPath: chunk.sectionPath,
+      anchor: chunk.anchor,
+      breadcrumbs: chunk.breadcrumbs,
+      kind: chunk.kind,
+      version: chunk.version,
+      generatedAt: chunk.generatedAt,
+      lang: chunk.lang,
+      tokens: chunk.tokens,
       text: chunk.text.length > 1800 ? `${chunk.text.slice(0, 1800)}...` : chunk.text,
       embedding: []
     }));
@@ -59,7 +112,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const rawMessages = Array.isArray(body.messages) ? body.messages : [];
     const messages = rawMessages.filter(Boolean) as ChatMessage[];
     const conversation = sanitizeConversation(messages, prompt);
-    const answer = await generateAnswer(prompt, sources, env, conversation, project, images);
+    let answer = await generateAnswer(prompt, sources, env, conversation, project, images);
+    if (sources.length && !hasInlineCitations(answer)) {
+      answer = await generateAnswer(prompt, sources, env, conversation, project, images, { strict: true });
+    }
     return jsonResponse({ response: answer, sources });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

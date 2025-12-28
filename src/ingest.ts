@@ -6,6 +6,7 @@ import { buildChunks } from "./embed.js";
 import { formatDate } from "./utils.js";
 
 const BASE_URL = process.env.EUI_BASE_URL ?? "https://euidev.ecdevops.eu/";
+const DOC_VERSION = process.env.EUI_DOC_VERSION ?? "EUI 21";
 const MAX_PAGES = Number(process.env.EUI_MAX_PAGES ?? 1200);
 const CONCURRENCY = Number(process.env.EUI_CONCURRENCY ?? 4);
 const DELAY_MS = Number(process.env.EUI_DELAY_MS ?? 150);
@@ -61,12 +62,14 @@ async function main() {
   );
 
   console.log("Embedding chunks...");
-  const chunks = await buildChunks(pages, MODEL, process.env.OPENAI_API_KEY);
+  const pagesWithVersion = pages.map((page) => ({ ...page, version: DOC_VERSION }));
+  const chunks = await buildChunks(pagesWithVersion, MODEL, process.env.OPENAI_API_KEY);
   await fs.writeFile(
     CHUNKS_PATH,
     JSON.stringify(
       {
-        baseUrl: BASE_URL,
+          baseUrl: BASE_URL,
+          version: DOC_VERSION,
         generatedAt: new Date().toISOString(),
         model: MODEL,
         chunks

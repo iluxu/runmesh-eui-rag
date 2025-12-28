@@ -3,6 +3,14 @@ export type ChunkRecord = {
   url: string;
   title: string;
   section: string;
+  sectionPath?: string;
+  anchor?: string;
+  breadcrumbs?: string[];
+  kind?: "api" | "example" | "concept" | "faq" | "changelog";
+  version?: string;
+  generatedAt?: string;
+  lang?: string;
+  tokens?: number;
   text: string;
   embedding: number[];
 };
@@ -15,6 +23,8 @@ export type ChatMessage = {
   role: "user" | "assistant";
   content: string;
 };
+
+export type Intent = "debug" | "api" | "howto" | "concept";
 
 export type ProjectContext = {
   name?: string;
@@ -31,6 +41,8 @@ export type Env = {
   OPENAI_API_KEY: string;
   OPENAI_MODEL?: string;
   OPENAI_EMBEDDING_MODEL?: string;
+  EUI_DOC_VERSION?: string;
+  EUI_PREFERRED_VERSION?: string;
   EUI_RAG_BUCKET: R2Bucket;
 };
 
@@ -49,12 +61,19 @@ const SYSTEM_PROMPT = [
   "You may refer to the conversation history without citing sources.",
   "Always include a Sources section with links for doc-based statements.",
   "If you cannot find the answer, say so and ask a clarifying question.",
+  "If sources conflict, mention the conflict and ask the user which version they target.",
   "Do not invent APIs or components."
+].join("\n");
+const STRICT_SYSTEM_PROMPT = [
+  SYSTEM_PROMPT,
+  "Every doc-based claim must include an inline citation like [1].",
+  "If a claim is not in the provided sources, say you don't know.",
+  "If you cannot cite, reply with: \"I don't know based on the provided sources.\""
 ].join("\n");
 const CHUNKS_KEY = "chunks.json";
 
 let cachedChunks: ChunkWithNorm[] | null = null;
-let cachedMeta: { generatedAt?: string; model?: string; baseUrl?: string } | null = null;
+let cachedMeta: { generatedAt?: string; model?: string; baseUrl?: string; version?: string } | null = null;
 let loadingPromise: Promise<ChunkWithNorm[]> | null = null;
 const rateLimits = new Map<string, { count: number; resetAt: number }>();
 
@@ -89,6 +108,7 @@ export async function loadChunks(env: Env): Promise<ChunkWithNorm[]> {
       generatedAt?: string;
       model?: string;
       baseUrl?: string;
+      version?: string;
     };
 
     const chunks = (payload.chunks ?? []).map((chunk) => ({
@@ -99,7 +119,8 @@ export async function loadChunks(env: Env): Promise<ChunkWithNorm[]> {
     cachedMeta = {
       generatedAt: payload.generatedAt,
       model: payload.model,
-      baseUrl: payload.baseUrl
+      baseUrl: payload.baseUrl,
+      version: payload.version
     };
     cachedChunks = chunks;
     return chunks;
@@ -124,16 +145,120 @@ export function getChunkCacheState() {
   };
 }
 
-export function rankChunks(chunks: ChunkWithNorm[], queryEmbedding: number[], limit: number) {
-  const queryNorm = vectorNorm(queryEmbedding) || 1;
-  const scored = chunks.map((chunk) => {
-    const denom = chunk.norm ? chunk.norm * queryNorm : queryNorm;
-    const score = denom ? dotProduct(chunk.embedding, queryEmbedding) / denom : 0;
-    return { chunk, score };
+type RankOptions = {
+  limit: number;
+  preferredVersion?: string;
+  preferredKinds?: ChunkRecord["kind"][];
+  maxPerUrl?: number;
+  maxPerSection?: number;
+};
+
+function tokenizeQuery(input: string) {
+  return Array.from(
+    new Set(
+      input
+        .toLowerCase()
+        .split(/[^a-z0-9_-]+/g)
+        .map((token) => token.trim())
+        .filter((token) => token.length > 2)
+    )
+  );
+}
+
+function lexicalBoost(tokens: string[], text: string) {
+  if (!tokens.length || !text) return 0;
+  const lower = text.toLowerCase();
+  let matches = 0;
+  tokens.forEach((token) => {
+    if (lower.includes(token)) matches += 1;
   });
+  return matches ? Math.min(0.2, (matches / tokens.length) * 0.2) : 0;
+}
+
+function scoreChunk(
+  chunk: ChunkWithNorm,
+  queryEmbedding: number[],
+  queryNorm: number,
+  tokens: string[],
+  options: RankOptions
+) {
+  const denom = chunk.norm ? chunk.norm * queryNorm : queryNorm;
+  const cosine = denom ? dotProduct(chunk.embedding, queryEmbedding) / denom : 0;
+  let score = cosine;
+
+  const kind = chunk.kind;
+  if (kind === "api") score += 0.12;
+  if (kind === "example") score += 0.1;
+  if (kind === "faq") score += 0.06;
+  if (options.preferredKinds && kind && options.preferredKinds.includes(kind)) {
+    score += 0.05;
+  }
+
+  const title = chunk.title || "";
+  const section = chunk.sectionPath || chunk.section || "";
+  const breadcrumbs = chunk.breadcrumbs?.join(" > ") ?? "";
+  score += lexicalBoost(tokens, `${title} ${section}`) * 1.2;
+  score += lexicalBoost(tokens, breadcrumbs) * 0.6;
+
+  if (options.preferredVersion && chunk.version && chunk.version.includes(options.preferredVersion)) {
+    score += 0.08;
+  }
+
+  const titleLower = title.toLowerCase();
+  if (titleLower.includes("overview") || titleLower.includes("introduction")) {
+    score -= 0.05;
+  }
+
+  return score;
+}
+
+function applyDiversity(
+  scored: { chunk: ChunkWithNorm; score: number }[],
+  options: RankOptions
+) {
+  const maxPerUrl = options.maxPerUrl ?? 2;
+  const maxPerSection = options.maxPerSection ?? 1;
+  const countsByUrl = new Map<string, number>();
+  const countsBySection = new Map<string, number>();
+  const selected: { chunk: ChunkWithNorm; score: number }[] = [];
+
+  for (const item of scored) {
+    const url = item.chunk.url;
+    const section = item.chunk.sectionPath || item.chunk.section || "";
+    const urlCount = countsByUrl.get(url) ?? 0;
+    const sectionCount = countsBySection.get(section) ?? 0;
+    if (urlCount >= maxPerUrl) continue;
+    if (sectionCount >= maxPerSection) continue;
+    countsByUrl.set(url, urlCount + 1);
+    countsBySection.set(section, sectionCount + 1);
+    selected.push(item);
+    if (selected.length >= options.limit) break;
+  }
+  return selected;
+}
+
+export function selectDiverse(
+  scored: { chunk: ChunkWithNorm; score: number }[],
+  options: RankOptions
+) {
+  return applyDiversity(scored, options);
+}
+
+export function rankChunks(
+  chunks: ChunkWithNorm[],
+  query: string,
+  queryEmbedding: number[],
+  options: RankOptions
+) {
+  const queryNorm = vectorNorm(queryEmbedding) || 1;
+  const tokens = tokenizeQuery(query);
+  const scored = chunks.map((chunk) => ({
+    chunk,
+    score: scoreChunk(chunk, queryEmbedding, queryNorm, tokens, options)
+  }));
 
   scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, limit);
+  return applyDiversity(scored, options);
 }
 
 export async function embedQuery(text: string, env: Env): Promise<number[]> {
@@ -196,6 +321,37 @@ export function buildSystemPrompt() {
   return SYSTEM_PROMPT;
 }
 
+export function buildStrictSystemPrompt() {
+  return STRICT_SYSTEM_PROMPT;
+}
+
+export function detectIntent(prompt: string): Intent {
+  const lower = prompt.toLowerCase();
+  if (lower.includes("error") || lower.includes("stacktrace") || lower.includes("exception")) return "debug";
+  if (lower.includes("prop") || lower.includes("api") || lower.includes("inputs") || lower.includes("options")) {
+    return "api";
+  }
+  if (lower.includes("how do i") || lower.includes("comment") || lower.includes("how to")) return "howto";
+  return "concept";
+}
+
+export function expandQuery(prompt: string) {
+  const tokens = prompt.split(/\s+/).map((token) => token.trim()).filter(Boolean);
+  const expanded = new Set(tokens);
+  tokens.forEach((token) => {
+    const cleaned = token.replace(/[^\w-]/g, "");
+    if (!cleaned) return;
+    if (!cleaned.includes("-")) {
+      expanded.add(`ecl-${cleaned}`);
+      expanded.add(`eui-${cleaned}`);
+    }
+    if (cleaned.toUpperCase() !== cleaned) {
+      expanded.add(`EUI_${cleaned.toUpperCase()}`);
+    }
+  });
+  return Array.from(expanded).join(" ");
+}
+
 export function sanitizeImages(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
   const images: string[] = [];
@@ -229,8 +385,19 @@ export function formatProjectContext(project?: ProjectContext) {
 export function buildUserPrompt(prompt: string, sources: ChunkRecord[], project?: ProjectContext) {
   const sourceBlock = sources
     .map((source, index) => {
-      const header = `[${index + 1}] ${source.title || "Untitled"} — ${source.url}`;
-      return `${header}\n${source.text}`;
+      const anchor = source.anchor ? source.anchor : "";
+      const url = anchor ? `${source.url}${anchor}` : source.url;
+      const sectionPath = source.sectionPath || source.section || "Untitled";
+      const meta = [
+        source.kind ? `kind=${source.kind}` : "",
+        source.version ? `version=${source.version}` : "",
+        source.lang ? `lang=${source.lang}` : ""
+      ]
+        .filter(Boolean)
+        .join(", ");
+      const header = `[${index + 1}] ${source.title || "Untitled"} — ${url}`;
+      const details = meta ? `${sectionPath} (${meta})` : sectionPath;
+      return `${header}\n${details}\n${source.text}`;
     })
     .join("\n\n");
 
@@ -260,15 +427,20 @@ export function buildUserContent(
   ];
 }
 
+export function hasInlineCitations(text: string) {
+  return /\[\d+\]/.test(text);
+}
+
 export async function generateAnswer(
   prompt: string,
   sources: ChunkRecord[],
   env: Env,
   conversation?: ChatMessage[],
   project?: ProjectContext,
-  images?: string[]
+  images?: string[],
+  options?: { strict?: boolean }
 ) {
-  const systemPrompt = buildSystemPrompt();
+  const systemPrompt = options?.strict ? buildStrictSystemPrompt() : buildSystemPrompt();
   const userContent = buildUserContent(prompt, sources, project, images);
 
   const chatMessages = [

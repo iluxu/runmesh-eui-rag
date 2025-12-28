@@ -1,10 +1,12 @@
 import { load } from "cheerio";
+import type { Cheerio, Element } from "cheerio";
 import { chromium, type Page } from "playwright";
 import { isHtmlUrl, normalizeWhitespace, stripHashes, toAbsoluteUrl } from "./utils.js";
-import { PageRecord } from "./types.js";
+import { CodeBlockRecord, PageRecord, PageSection, TableRecord } from "./types.js";
 import { fetchSitemapUrls } from "./sitemap.js";
 
 type CrawlMode = "fetch" | "browser";
+type CheerioAPI = ReturnType<typeof load>;
 
 type CrawlOptions = {
   baseUrl: string;
@@ -56,23 +58,136 @@ function isAllowed(pathname: string, disallows: string[], ignoreRobots: boolean)
   return !disallows.some((rule) => rule !== "/" && pathname.startsWith(rule));
 }
 
+function slugifyHeading(input: string): string {
+  return (
+    input
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .trim()
+      .replace(/\s+/g, "-") || "section"
+  );
+}
+
+function extractBreadcrumbs($: CheerioAPI): string[] {
+  const candidates = $("nav[aria-label*='breadcrumb' i] a, nav.breadcrumb a, .breadcrumb a");
+  const crumbs = candidates
+    .map((_, el) => normalizeWhitespace($(el).text()))
+    .get()
+    .filter(Boolean);
+  return crumbs;
+}
+
+function extractCodeBlocks($root: Cheerio<Element>, $: CheerioAPI): CodeBlockRecord[] {
+  const blocks: CodeBlockRecord[] = [];
+  $root.find("pre code").each((_, el) => {
+    const code = $(el).text();
+    if (!code.trim()) return;
+    const className = $(el).attr("class") ?? "";
+    const match = className.match(/language-([a-z0-9-]+)/i);
+    const lang = match?.[1];
+    blocks.push({ lang, code: code.trim() });
+  });
+  return blocks;
+}
+
+function extractTables($root: Cheerio<Element>, $: CheerioAPI): TableRecord[] {
+  const tables: TableRecord[] = [];
+  $root.find("table").each((_, table) => {
+    const headers = $(table)
+      .find("thead th")
+      .map((_, th) => normalizeWhitespace($(th).text()))
+      .get()
+      .filter(Boolean);
+    const rows = $(table)
+      .find("tbody tr")
+      .map((_, tr) =>
+        $(tr)
+          .find("td")
+          .map((_, td) => normalizeWhitespace($(td).text()))
+          .get()
+          .filter(Boolean)
+      )
+      .get()
+      .filter((row) => row.length > 0);
+    if (headers.length || rows.length) {
+      tables.push({ headers, rows });
+    }
+  });
+  return tables;
+}
+
+function buildSections($: CheerioAPI, root: Cheerio<Element>): PageSection[] {
+  const headings = root.find("h1, h2, h3").toArray();
+  if (!headings.length) {
+    const text = normalizeWhitespace(root.text());
+    return [
+      {
+        heading: "Overview",
+        level: 1,
+        anchor: "",
+        path: ["Overview"],
+        text,
+        codeBlocks: extractCodeBlocks(root, $),
+        tables: extractTables(root, $)
+      }
+    ];
+  }
+
+  const sections: PageSection[] = [];
+  const pathStack: { level: number; heading: string }[] = [];
+
+  headings.forEach((headingEl) => {
+    const headingText = normalizeWhitespace($(headingEl).text());
+    const level = Number(headingEl.tagName?.slice(1) ?? "1") || 1;
+    const headingId = $(headingEl).attr("id") || "";
+    const anchor = headingId ? `#${headingId}` : `#${slugifyHeading(headingText)}`;
+
+    while (pathStack.length && pathStack[pathStack.length - 1].level >= level) {
+      pathStack.pop();
+    }
+    pathStack.push({ level, heading: headingText });
+    const path = pathStack.map((item) => item.heading);
+
+    const sectionNodes = $(headingEl).nextUntil("h1, h2, h3");
+    const wrapper = $("<div></div>");
+    sectionNodes.each((_, el) => {
+      wrapper.append($(el).clone());
+    });
+
+    const codeBlocks = extractCodeBlocks(wrapper, $);
+    const tables = extractTables(wrapper, $);
+    const textRoot = wrapper.clone();
+    textRoot.find("pre, table").remove();
+    const text = normalizeWhitespace(textRoot.text());
+
+    sections.push({
+      heading: headingText,
+      level,
+      anchor,
+      path,
+      text,
+      codeBlocks,
+      tables
+    });
+  });
+
+  return sections;
+}
+
 function extractContent(html: string, url: string): PageRecord {
   const $ = load(html);
   $("script, style, noscript, svg").remove();
 
   const title = normalizeWhitespace($("title").text() || "EUI Documentation");
+  const canonicalHref = $("link[rel='canonical']").attr("href");
+  const canonicalUrl = canonicalHref ? toAbsoluteUrl(url, canonicalHref) : url;
   const main = $("main");
   const article = $("article");
   const root = main.length ? main : article.length ? article : $("body");
 
-  const headings = root
-    .find("h1, h2, h3")
-    .map((_, el) => normalizeWhitespace($(el).text()))
-    .get()
-    .filter(Boolean);
-
-  const text = normalizeWhitespace(root.text());
-  return { url, title, text, headings };
+  const breadcrumbs = extractBreadcrumbs($);
+  const sections = buildSections($, root);
+  return { url: canonicalUrl ?? url, canonicalUrl: canonicalUrl ?? undefined, title, breadcrumbs, sections };
 }
 
 function extractLinks(html: string, baseUrl: string, baseOrigin: string): string[] {

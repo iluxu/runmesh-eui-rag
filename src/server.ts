@@ -19,6 +19,7 @@ const CHUNKS_PATH = path.join(DATA_DIR, "chunks.json");
 
 const DEFAULT_MODEL = "gpt-5.2";
 const BASE_URL = process.env.EUI_BASE_URL ?? "https://euidev.ecdevops.eu/";
+const DOC_VERSION = process.env.EUI_DOC_VERSION ?? "EUI 21";
 const MAX_PAGES = Number(process.env.EUI_MAX_PAGES ?? 1200);
 const CONCURRENCY = Number(process.env.EUI_CONCURRENCY ?? 4);
 const DELAY_MS = Number(process.env.EUI_DELAY_MS ?? 150);
@@ -162,7 +163,8 @@ async function refreshIndex() {
     }
   });
   indexState = "embedding";
-  const chunks = await buildChunks(pages, process.env.OPENAI_MODEL ?? DEFAULT_MODEL, process.env.OPENAI_API_KEY);
+  const pagesWithVersion = pages.map((page) => ({ ...page, version: DOC_VERSION }));
+  const chunks = await buildChunks(pagesWithVersion, process.env.OPENAI_MODEL ?? DEFAULT_MODEL, process.env.OPENAI_API_KEY);
   await initRetriever(chunks);
   indexSource = "live";
 
@@ -175,6 +177,7 @@ async function refreshIndex() {
           baseUrl: BASE_URL,
           generatedAt: lastRefresh,
           model: process.env.OPENAI_MODEL ?? DEFAULT_MODEL,
+          version: DOC_VERSION,
           chunks
         },
         null,
@@ -216,11 +219,17 @@ function createTools() {
         const results = await retriever.search(query, limit);
         return results.map((item) => {
           const chunk = chunkIndex.get(item.id);
+          const anchor = chunk?.anchor ?? "";
           return {
             id: item.id,
-            url: chunk?.url ?? "",
+            url: `${chunk?.url ?? ""}${anchor}`,
             title: chunk?.title ?? "",
             section: chunk?.section ?? "",
+            sectionPath: chunk?.sectionPath ?? "",
+            anchor: chunk?.anchor ?? "",
+            breadcrumbs: chunk?.breadcrumbs ?? [],
+            kind: chunk?.kind ?? "concept",
+            version: chunk?.version ?? "",
             text: chunk?.text ?? item.text
           };
         });
@@ -332,11 +341,17 @@ async function handleAskStructured(req: http.IncomingMessage, res: http.ServerRe
     const sources = await retriever.search(prompt, 5);
     const sourcePayload = sources.map((item) => {
       const chunk = chunkIndex.get(item.id);
+      const anchor = chunk?.anchor ?? "";
       return {
         id: item.id,
-        url: chunk?.url ?? "",
+        url: `${chunk?.url ?? ""}${anchor}`,
         title: chunk?.title ?? "",
         section: chunk?.section ?? "",
+        sectionPath: chunk?.sectionPath ?? "",
+        anchor: chunk?.anchor ?? "",
+        breadcrumbs: chunk?.breadcrumbs ?? [],
+        kind: chunk?.kind ?? "concept",
+        version: chunk?.version ?? "",
         text: chunk?.text ?? item.text
       };
     });
