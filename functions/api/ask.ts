@@ -59,9 +59,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         ? ["example"]
         : undefined;
 
-    const preferredVersion = env.EUI_PREFERRED_VERSION ?? env.EUI_DOC_VERSION;
+    const preferredVersion =
+      env.RAG_PREFERRED_VERSION ?? env.RAG_DOC_VERSION ?? env.EUI_PREFERRED_VERSION ?? env.EUI_DOC_VERSION;
     const embedding = await embedQuery(prompt, env);
-    const expanded = expandQuery(prompt);
+    const expanded = expandQuery(prompt, env);
     const expandedEmbedding = expanded !== prompt ? await embedQuery(expanded, env) : null;
 
     const baseTop = rankChunks(chunks, prompt, embedding, {

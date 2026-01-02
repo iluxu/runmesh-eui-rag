@@ -67,9 +67,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         ? ["example"]
         : undefined;
 
-    const preferredVersion = env.EUI_PREFERRED_VERSION ?? env.EUI_DOC_VERSION;
+    const preferredVersion =
+      env.RAG_PREFERRED_VERSION ?? env.RAG_DOC_VERSION ?? env.EUI_PREFERRED_VERSION ?? env.EUI_DOC_VERSION;
     const embedding = await embedQuery(prompt, env);
-    const expanded = expandQuery(prompt);
+    const expanded = expandQuery(prompt, env);
     const expandedEmbedding = expanded !== prompt ? await embedQuery(expanded, env) : null;
 
     const baseTop = rankChunks(chunks, prompt, embedding, {
@@ -120,7 +121,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const rawMessages = Array.isArray(body.messages) ? body.messages : [];
     const messages = rawMessages.filter(Boolean) as ChatMessage[];
     const conversation = sanitizeConversation(messages, prompt);
-    const systemPrompt = buildSystemPrompt();
+    const systemPrompt = buildSystemPrompt(env);
     const userContent = buildUserContent(prompt, sources, project, images);
 
     const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {

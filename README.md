@@ -1,9 +1,9 @@
-# RunMesh EUI RAG (Local)
+# RunMesh Docs RAG (Local)
 
-A local RunMesh app that ingests the public EUI documentation site and provides an expert RAG chat experience with citations.
+A local RunMesh app that ingests a documentation site (default: EUI) and provides an expert RAG chat experience with citations.
 
 ## Requirements
-- Public access to `https://euidev.ecdevops.eu/`
+- Public access to the target docs site (default: `https://euidev.ecdevops.eu/`)
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL` (defaults to `gpt-5.2`)
 
@@ -26,16 +26,25 @@ pnpm --dir runmesh-eui-rag start
 ```
 
 Optional controls:
-- `EUI_LIVE=0` to disable live crawl
-- `EUI_USE_LOCAL=1` to force loading `data/chunks.json`
-- `EUI_SAVE=1` to save the live crawl to disk
-- `EUI_SEED_URLS=https://euidev.ecdevops.eu/quickstart,...` to force extra entry points
-- `EUI_CRAWL_MODE=browser` (default) to use Playwright for SPA crawling
-- `EUI_CRAWL_MODE=fetch` to use plain HTTP crawling
-- `EUI_URL_INCLUDE=21.x` to only keep URLs that include the substring
-- `EUI_URL_EXCLUDE=19.x,18.x` to skip URLs that include the substring
-- `EUI_BROWSER_TIMEOUT_MS=20000` for Playwright timeouts
-- `EUI_BROWSER_WAIT_MS=400` for extra render wait time
+Use the `RAG_` prefix (preferred). `EUI_` variables are still accepted for backward compatibility.
+
+- `RAG_BASE_URL=https://euidev.ecdevops.eu/`
+- `RAG_DOC_VERSION=EUI 21`
+- `RAG_DOCS_NAME=EUI`
+- `RAG_LIVE=0` to disable live crawl
+- `RAG_USE_LOCAL=1` to force loading `data/chunks.json`
+- `RAG_SAVE=1` to save the live crawl to disk
+- `RAG_SEED_URLS=https://euidev.ecdevops.eu/quickstart,...` to force extra entry points
+- `RAG_CRAWL_MODE=browser` (default) to use Playwright for SPA crawling
+- `RAG_CRAWL_MODE=fetch` to use plain HTTP crawling
+- `RAG_URL_INCLUDE=21.x` to only keep URLs that include the substring
+- `RAG_URL_EXCLUDE=19.x,18.x` to skip URLs that include the substring
+- `RAG_BROWSER_TIMEOUT_MS=20000` for Playwright timeouts
+- `RAG_BROWSER_WAIT_MS=400` for extra render wait time
+- `RAG_USER_AGENT=RunMeshRAG/0.1 (Playwright)`
+- `RAG_DATA_DIR=./data` to override where chunks.json is stored
+- `RAG_EXPAND=0` to disable query expansions (defaults to EUI-oriented expansions)
+- `RAG_SYSTEM_PROMPT="..."` to override the assistant prompt
 
 ## Ingest (optional one-time)
 
@@ -47,14 +56,33 @@ pnpm --dir runmesh-eui-rag ingest
 ```
 
 Options:
-- `EUI_BASE_URL` (default: https://euidev.ecdevops.eu/)
-- `EUI_MAX_PAGES` (default: 1200)
-- `EUI_CONCURRENCY` (default: 4)
-- `EUI_DELAY_MS` (default: 150)
-- `EUI_IGNORE_ROBOTS=1` to bypass robots.txt
-- `EUI_CRAWL_MODE=browser` to use Playwright for SPA crawling
-- `EUI_URL_INCLUDE=21.x` to only keep URLs that include the substring
-- `EUI_URL_EXCLUDE=19.x,18.x` to skip URLs that include the substring
+Use the `RAG_` prefix (preferred). `EUI_` variables are still accepted.
+- `RAG_BASE_URL` (default: https://euidev.ecdevops.eu/)
+- `RAG_DOC_VERSION` (default: EUI 21)
+- `RAG_MAX_PAGES` (default: 1200)
+- `RAG_CONCURRENCY` (default: 4)
+- `RAG_DELAY_MS` (default: 150)
+- `RAG_IGNORE_ROBOTS=1` to bypass robots.txt
+- `RAG_CRAWL_MODE=browser` to use Playwright for SPA crawling
+- `RAG_URL_INCLUDE=21.x` to only keep URLs that include the substring
+- `RAG_URL_EXCLUDE=19.x,18.x` to skip URLs that include the substring
+- `RAG_DATA_DIR=./data` to override where chunks.json is stored
+
+## Example: Polymarket docs ingest
+
+```bash
+export OPENAI_API_KEY="..."
+export OPENAI_MODEL="gpt-5.2"
+export RAG_BASE_URL="https://docs.polymarket.com/developers/"
+export RAG_DOC_VERSION="Polymarket Developers"
+export RAG_DOCS_NAME="Polymarket developer"
+export RAG_DATA_DIR="./data/polymarket"
+export RAG_CRAWL_MODE="browser"
+export RAG_URL_INCLUDE="/developers/"
+export RAG_EXPAND="0"
+
+pnpm --dir runmesh-eui-rag ingest
+```
 
 ## Run
 

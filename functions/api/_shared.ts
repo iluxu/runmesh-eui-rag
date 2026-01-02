@@ -41,9 +41,20 @@ export type Env = {
   OPENAI_API_KEY: string;
   OPENAI_MODEL?: string;
   OPENAI_EMBEDDING_MODEL?: string;
+  RAG_DOC_VERSION?: string;
+  RAG_PREFERRED_VERSION?: string;
+  RAG_DOCS_NAME?: string;
+  RAG_SYSTEM_PROMPT?: string;
+  RAG_EXPAND_PREFIXES?: string;
+  RAG_EXPAND?: string;
+  RAG_BUCKET?: R2Bucket;
   EUI_DOC_VERSION?: string;
   EUI_PREFERRED_VERSION?: string;
-  EUI_RAG_BUCKET: R2Bucket;
+  EUI_DOCS_NAME?: string;
+  EUI_SYSTEM_PROMPT?: string;
+  EUI_EXPAND_PREFIXES?: string;
+  EUI_EXPAND?: string;
+  EUI_RAG_BUCKET?: R2Bucket;
 };
 
 const DEFAULT_MODEL = "gpt-5.2";
@@ -53,7 +64,18 @@ const RATE_LIMIT_MAX = 12;
 const MAX_IMAGE_COUNT = 3;
 const MAX_IMAGE_DATA_URL_LENGTH = 8_000_000;
 const allowedImagePrefixes = ["data:image/png;base64,", "data:image/jpeg;base64,", "data:image/webp;base64,"];
-const SYSTEM_PROMPT = [
+const BASE_SYSTEM_PROMPT = [
+  "You are a friendly, pragmatic documentation expert for developers.",
+  "Write in a warm, conversational tone with short paragraphs.",
+  "Use headings or bullets when it helps, and include code snippets when useful.",
+  "Answer using the sources provided for doc claims.",
+  "You may refer to the conversation history without citing sources.",
+  "Always include a Sources section with links for doc-based statements.",
+  "If you cannot find the answer, say so and ask a clarifying question.",
+  "If sources conflict, mention the conflict and ask the user which version they target.",
+  "Do not invent APIs or components."
+].join("\n");
+const LEGACY_EUI_SYSTEM_PROMPT = [
   "You are a friendly, pragmatic EUI/ECL expert for frontend developers.",
   "Write in a warm, conversational tone with short paragraphs.",
   "Use headings or bullets when it helps, and include code snippets when useful.",
@@ -64,8 +86,7 @@ const SYSTEM_PROMPT = [
   "If sources conflict, mention the conflict and ask the user which version they target.",
   "Do not invent APIs or components."
 ].join("\n");
-const STRICT_SYSTEM_PROMPT = [
-  SYSTEM_PROMPT,
+const STRICT_PROMPT_SUFFIX = [
   "Every doc-based claim must include an inline citation like [1].",
   "If a claim is not in the provided sources, say you don't know.",
   "If you cannot cite, reply with: \"I don't know based on the provided sources.\""
@@ -99,7 +120,11 @@ export async function loadChunks(env: Env): Promise<ChunkWithNorm[]> {
   if (loadingPromise) return loadingPromise;
 
   loadingPromise = (async () => {
-    const object = await env.EUI_RAG_BUCKET.get(CHUNKS_KEY);
+    const bucket = env.RAG_BUCKET ?? env.EUI_RAG_BUCKET;
+    if (!bucket) {
+      throw new Error("Missing RAG bucket binding. Set RAG_BUCKET or EUI_RAG_BUCKET.");
+    }
+    const object = await bucket.get(CHUNKS_KEY);
     if (!object) {
       throw new Error(`Missing ${CHUNKS_KEY} in R2 bucket.`);
     }
@@ -317,12 +342,24 @@ export function checkRateLimit(sessionId: string, now = Date.now()) {
   };
 }
 
-export function buildSystemPrompt() {
-  return SYSTEM_PROMPT;
+export function buildSystemPrompt(env?: Partial<Env>) {
+  const override = env?.RAG_SYSTEM_PROMPT ?? env?.EUI_SYSTEM_PROMPT;
+  if (override) return override;
+  const docsName =
+    env?.RAG_DOCS_NAME ??
+    env?.EUI_DOCS_NAME ??
+    (env?.EUI_DOC_VERSION ? "EUI" : undefined);
+  if (docsName && docsName.toLowerCase().includes("eui")) {
+    return LEGACY_EUI_SYSTEM_PROMPT;
+  }
+  if (docsName) {
+    return `${BASE_SYSTEM_PROMPT}\nFocus on the ${docsName} documentation.`;
+  }
+  return LEGACY_EUI_SYSTEM_PROMPT;
 }
 
-export function buildStrictSystemPrompt() {
-  return STRICT_SYSTEM_PROMPT;
+export function buildStrictSystemPrompt(env?: Partial<Env>) {
+  return [buildSystemPrompt(env), STRICT_PROMPT_SUFFIX].join("\n");
 }
 
 export function detectIntent(prompt: string): Intent {
@@ -335,19 +372,32 @@ export function detectIntent(prompt: string): Intent {
   return "concept";
 }
 
-export function expandQuery(prompt: string) {
+export function expandQuery(prompt: string, env?: Partial<Env>) {
+  const disabled = env?.RAG_EXPAND === "0" || env?.EUI_EXPAND === "0";
+  if (disabled) return prompt;
+  const prefixesRaw = env?.RAG_EXPAND_PREFIXES ?? env?.EUI_EXPAND_PREFIXES ?? "ecl,eui,EUI_";
+  const prefixes = prefixesRaw
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  if (!prefixes.length) return prompt;
+
   const tokens = prompt.split(/\s+/).map((token) => token.trim()).filter(Boolean);
   const expanded = new Set(tokens);
   tokens.forEach((token) => {
     const cleaned = token.replace(/[^\w-]/g, "");
     if (!cleaned) return;
-    if (!cleaned.includes("-")) {
-      expanded.add(`ecl-${cleaned}`);
-      expanded.add(`eui-${cleaned}`);
-    }
-    if (cleaned.toUpperCase() !== cleaned) {
-      expanded.add(`EUI_${cleaned.toUpperCase()}`);
-    }
+    prefixes.forEach((prefix) => {
+      if (prefix.endsWith("_")) {
+        if (cleaned.toUpperCase() !== cleaned) {
+          expanded.add(`${prefix}${cleaned.toUpperCase()}`);
+        }
+        return;
+      }
+      if (!cleaned.includes("-")) {
+        expanded.add(`${prefix}-${cleaned}`);
+      }
+    });
   });
   return Array.from(expanded).join(" ");
 }
@@ -440,7 +490,7 @@ export async function generateAnswer(
   images?: string[],
   options?: { strict?: boolean }
 ) {
-  const systemPrompt = options?.strict ? buildStrictSystemPrompt() : buildSystemPrompt();
+  const systemPrompt = options?.strict ? buildStrictSystemPrompt(env) : buildSystemPrompt(env);
   const userContent = buildUserContent(prompt, sources, project, images);
 
   const chatMessages = [

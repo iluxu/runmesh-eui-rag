@@ -18,6 +18,7 @@ type CrawlOptions = {
   mode?: CrawlMode;
   browserTimeoutMs?: number;
   browserWaitMs?: number;
+  userAgent?: string;
   includePatterns?: string[];
   excludePatterns?: string[];
   onProgress?: (count: number, url: string) => void;
@@ -30,18 +31,20 @@ async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function fetchText(url: string): Promise<string> {
-  const response = await fetch(url, { headers: { "User-Agent": "RunMeshRAG/0.1" } });
+async function fetchText(url: string, userAgent?: string): Promise<string> {
+  const response = await fetch(url, {
+    headers: { "User-Agent": userAgent ?? "RunMeshRAG/0.1" }
+  });
   if (!response.ok) {
     throw new Error(`Fetch failed ${response.status}: ${url}`);
   }
   return response.text();
 }
 
-async function loadRobots(base: string): Promise<string[]> {
+async function loadRobots(base: string, userAgent?: string): Promise<string[]> {
   try {
     const robotsUrl = new URL("/robots.txt", base).toString();
-    const content = await fetchText(robotsUrl);
+    const content = await fetchText(robotsUrl, userAgent);
     return content
       .split("\n")
       .map((line) => line.trim())
@@ -217,7 +220,7 @@ function matchesPatterns(url: string, includePatterns?: string[], excludePattern
 }
 
 async function crawlSiteFetch(options: CrawlOptions): Promise<PageRecord[]> {
-  const disallows = await loadRobots(options.baseUrl);
+  const disallows = await loadRobots(options.baseUrl, options.userAgent);
   const baseOrigin = new URL(options.baseUrl).origin;
   const sitemapUrls = await fetchSitemapUrls(options.baseUrl, options.maxPages);
   const seedUrls = new Set([options.baseUrl, ...sitemapUrls, ...(options.seedUrls ?? [])]);
@@ -236,7 +239,7 @@ async function crawlSiteFetch(options: CrawlOptions): Promise<PageRecord[]> {
         const pathname = new URL(url).pathname;
         if (!isAllowed(pathname, disallows, options.ignoreRobots)) return null;
         visited.add(url);
-        const html = await fetchText(url);
+        const html = await fetchText(url, options.userAgent);
         const page = shouldStore ? extractContent(html, url) : null;
         const links = extractLinks(html, url, baseOrigin);
         links.forEach((link) => {
@@ -336,7 +339,7 @@ async function crawlSiteBrowser(options: CrawlOptions): Promise<PageRecord[]> {
 
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({
-    userAgent: "RunMeshRAG/0.1 (Playwright)"
+    userAgent: options.userAgent ?? "RunMeshRAG/0.1 (Playwright)"
   });
 
   try {
