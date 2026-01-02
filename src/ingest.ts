@@ -32,7 +32,11 @@ const SEED_URLS = (ENV.RAG_SEED_URLS ?? ENV.EUI_SEED_URLS ?? "")
 const DATA_DIR = path.resolve(ENV.RAG_DATA_DIR ?? ENV.EUI_DATA_DIR ?? "data");
 const PAGES_PATH = path.join(DATA_DIR, "pages.json");
 const CHUNKS_PATH = path.join(DATA_DIR, "chunks.json");
-const MODEL = ENV.OPENAI_MODEL ?? "gpt-5.2";
+const EMBEDDING_MODEL =
+  ENV.RAG_EMBEDDING_MODEL ??
+  ENV.EUI_EMBEDDING_MODEL ??
+  ENV.OPENAI_EMBEDDING_MODEL ??
+  "text-embedding-3-small";
 
 async function main() {
   console.log(`RunMesh ingest starting for ${DOCS_NAME}: ${BASE_URL}`);
@@ -72,7 +76,7 @@ async function main() {
 
   console.log("Embedding chunks...");
   const pagesWithVersion = pages.map((page) => ({ ...page, version: DOC_VERSION }));
-  const chunks = await buildChunks(pagesWithVersion, MODEL, ENV.OPENAI_API_KEY);
+  const chunks = await buildChunks(pagesWithVersion, EMBEDDING_MODEL, ENV.OPENAI_API_KEY);
   await fs.writeFile(
     CHUNKS_PATH,
     JSON.stringify(
@@ -80,7 +84,7 @@ async function main() {
         baseUrl: BASE_URL,
         version: DOC_VERSION,
         generatedAt: new Date().toISOString(),
-        model: MODEL,
+        model: EMBEDDING_MODEL,
         chunks
       },
       null,

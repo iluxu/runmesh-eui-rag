@@ -46,6 +46,11 @@ const CRAWL_MODE = (ENV.RAG_CRAWL_MODE ?? ENV.EUI_CRAWL_MODE ?? "browser") as "f
 const BROWSER_TIMEOUT_MS = Number(ENV.RAG_BROWSER_TIMEOUT_MS ?? ENV.EUI_BROWSER_TIMEOUT_MS ?? 20000);
 const BROWSER_WAIT_MS = Number(ENV.RAG_BROWSER_WAIT_MS ?? ENV.EUI_BROWSER_WAIT_MS ?? 400);
 const USER_AGENT = ENV.RAG_USER_AGENT ?? ENV.EUI_USER_AGENT;
+const EMBEDDING_MODEL =
+  ENV.RAG_EMBEDDING_MODEL ??
+  ENV.EUI_EMBEDDING_MODEL ??
+  ENV.OPENAI_EMBEDDING_MODEL ??
+  "text-embedding-3-small";
 const URL_INCLUDE = (ENV.RAG_URL_INCLUDE ?? ENV.EUI_URL_INCLUDE ?? "")
   .split(",")
   .map((entry) => entry.trim())
@@ -183,7 +188,7 @@ async function refreshIndex() {
   });
   indexState = "embedding";
   const pagesWithVersion = pages.map((page) => ({ ...page, version: DOC_VERSION }));
-  const chunks = await buildChunks(pagesWithVersion, ENV.OPENAI_MODEL ?? DEFAULT_MODEL, ENV.OPENAI_API_KEY);
+  const chunks = await buildChunks(pagesWithVersion, EMBEDDING_MODEL, ENV.OPENAI_API_KEY);
   await initRetriever(chunks);
   indexSource = "live";
 
@@ -195,7 +200,7 @@ async function refreshIndex() {
         {
           baseUrl: BASE_URL,
           generatedAt: lastRefresh,
-          model: ENV.OPENAI_MODEL ?? DEFAULT_MODEL,
+          model: EMBEDDING_MODEL,
           version: DOC_VERSION,
           chunks
         },

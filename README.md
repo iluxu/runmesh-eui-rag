@@ -45,6 +45,7 @@ Use the `RAG_` prefix (preferred). `EUI_` variables are still accepted for backw
 - `RAG_DATA_DIR=./data` to override where chunks.json is stored
 - `RAG_EXPAND=0` to disable query expansions (defaults to EUI-oriented expansions)
 - `RAG_SYSTEM_PROMPT="..."` to override the assistant prompt
+- `RAG_EMBEDDING_MODEL=text-embedding-3-small` to override the embedding model
 
 ## Ingest (optional one-time)
 
