@@ -5,6 +5,7 @@ const MIN_TOKENS = 300;
 const MAX_TOKENS = 900;
 const CHARS_PER_TOKEN = 4;
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
+const EMBEDDING_BATCH_SIZE = 64;
 
 function estimateTokens(text: string) {
   return Math.max(1, Math.ceil(text.length / CHARS_PER_TOKEN));
@@ -73,7 +74,7 @@ function chunkSectionText(text: string) {
   return chunkText(text, maxChars, 0);
 }
 
-async function embedInput(text: string, apiKey: string, model: string): Promise<number[]> {
+async function embedInputs(texts: string[], apiKey: string, model: string): Promise<number[][]> {
   const maxAttempts = 5;
   const endpoint = "https://api.openai.com/v1/embeddings";
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -86,19 +87,21 @@ async function embedInput(text: string, apiKey: string, model: string): Promise<
         },
         body: JSON.stringify({
           model,
-          input: text
+          input: texts
         })
       });
 
       if (response.ok) {
         const payload = (await response.json()) as {
-          data?: { embedding: number[] }[];
+          data?: { embedding: number[]; index: number }[];
         };
-        const embedding = payload.data?.[0]?.embedding;
-        if (!embedding) {
+        const embeddings = (payload.data ?? [])
+          .sort((a, b) => a.index - b.index)
+          .map((entry) => entry.embedding);
+        if (embeddings.length !== texts.length || embeddings.some((embedding) => !embedding)) {
           throw new Error("OpenAI embeddings missing data.");
         }
-        return embedding;
+        return embeddings;
       }
 
       const retryable = [429, 500, 502, 503, 504].includes(response.status);
@@ -121,7 +124,7 @@ async function embedInput(text: string, apiKey: string, model: string): Promise<
     }
   }
 
-  throw new Error("OpenAI embeddings failed after retries.");
+  throw new Error("OpenAI embeddings batch failed after retries.");
 }
 
 export async function buildChunks(pages: PageRecord[], model?: string, apiKey?: string) {
@@ -130,7 +133,7 @@ export async function buildChunks(pages: PageRecord[], model?: string, apiKey?: 
   }
   const embeddingModel = model && model.trim().length ? model : DEFAULT_EMBEDDING_MODEL;
 
-  const chunks: ChunkRecord[] = [];
+  const pending: Omit<ChunkRecord, "embedding">[] = [];
   const generatedAt = new Date().toISOString();
 
   for (const page of pages) {
@@ -141,14 +144,11 @@ export async function buildChunks(pages: PageRecord[], model?: string, apiKey?: 
       if (!content) continue;
       const pieces = chunkSectionText(content);
       for (const piece of pieces) {
-        const contextHeader = buildContextHeader(page, section);
-        const inputText = `${contextHeader}\n\n${piece}`.trim();
-        const embedding = await embedInput(inputText, apiKey, embeddingModel);
         const tokens = estimateTokens(piece);
         const kind = inferKind(section);
         const lang = section.codeBlocks.length === 1 ? section.codeBlocks[0]?.lang : undefined;
         const anchor = section.anchor || "";
-        chunks.push({
+        pending.push({
           id: `${page.url}${anchor}#chunk-${index}`,
           url: page.url,
           title: page.title,
@@ -161,12 +161,32 @@ export async function buildChunks(pages: PageRecord[], model?: string, apiKey?: 
           generatedAt,
           lang,
           tokens,
-          text: piece,
-          embedding
+          text: piece
         });
         index += 1;
       }
     }
+  }
+
+  const chunks: ChunkRecord[] = [];
+  for (let start = 0; start < pending.length; start += EMBEDDING_BATCH_SIZE) {
+    const batch = pending.slice(start, start + EMBEDDING_BATCH_SIZE);
+    const inputs = batch.map((chunk) => {
+      const page = pages.find((entry) => entry.url === chunk.url);
+      const section = page?.sections.find((entry) => (entry.anchor || "") === chunk.anchor && entry.heading === chunk.section);
+      const contextHeader =
+        page && section
+          ? buildContextHeader(page, section)
+          : [`Title: ${chunk.title}`, chunk.sectionPath ? `Section: ${chunk.sectionPath}` : ""].filter(Boolean).join("\n");
+      return `${contextHeader}\n\n${chunk.text}`.trim();
+    });
+    const embeddings = await embedInputs(inputs, apiKey, embeddingModel);
+    batch.forEach((chunk, index) => {
+      chunks.push({
+        ...chunk,
+        embedding: embeddings[index] ?? []
+      });
+    });
   }
 
   return chunks;

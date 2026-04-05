@@ -6,6 +6,12 @@ const indexStatus = document.getElementById("index-status");
 const refreshIndexBtn = document.getElementById("refresh-index");
 const clearChatBtn = document.getElementById("clear-chat");
 const suggestionChips = document.querySelectorAll(".suggestion-chip");
+const modelBadge = document.getElementById("model-badge");
+const docsVersion = document.getElementById("docs-version");
+const chunkCount = document.getElementById("chunk-count");
+const sourceType = document.getElementById("source-type");
+const lastRefresh = document.getElementById("last-refresh");
+const docsSourceLink = document.getElementById("docs-source-link");
 const projectDrop = document.getElementById("project-drop");
 const projectFileInput = document.getElementById("project-file");
 const projectMeta = document.getElementById("project-meta");
@@ -353,7 +359,8 @@ if (chatLog) {
 
 const defaultGreeting = {
   role: "assistant",
-  content: "Ask about any EUI component, API, or quickstart step."
+  content:
+    "Ask for selectors, inputs, outputs, module imports, standalone status, deprecated APIs, routes, or examples from EUI 21.x."
 };
 
 conversation = loadHistory();
@@ -622,6 +629,25 @@ async function refreshStatus() {
     indexStatus.textContent = payload.error ? `Index: Error (${payload.error})` : "Index: Error";
     return;
   }
+  if (modelBadge && payload.model) {
+    modelBadge.textContent = payload.model;
+  }
+  if (docsVersion) {
+    docsVersion.textContent = payload.version || "EUI 21.x";
+  }
+  if (chunkCount) {
+    chunkCount.textContent = payload.chunks ? formatNumber(payload.chunks) : "0";
+  }
+  if (sourceType) {
+    const sourceLabel = payload.sourceType === "documentation-json" ? "documentation.json" : payload.source || "-";
+    sourceType.textContent = sourceLabel;
+  }
+  if (lastRefresh) {
+    lastRefresh.textContent = payload.lastRefresh ? new Date(payload.lastRefresh).toLocaleString() : "-";
+  }
+  if (docsSourceLink) {
+    docsSourceLink.href = payload.baseUrl || payload.sourceUrl || docsSourceLink.href;
+  }
   if (!payload.ready) {
     if (payload.state === "crawling") {
       const extra = payload.pagesCrawled ? ` (${payload.pagesCrawled} pages)` : "";
@@ -635,7 +661,8 @@ async function refreshStatus() {
     indexStatus.textContent = payload.error ? `Index: Error (${payload.error})` : "Index: Loading";
     return;
   }
-  const label = `Index: ${payload.chunks} chunks (${payload.source})`;
+  const sourceLabel = payload.sourceType === "documentation-json" ? "documentation.json" : payload.source;
+  const label = `Index: ${payload.chunks} chunks (${sourceLabel})`;
   indexStatus.textContent = label;
 }
 

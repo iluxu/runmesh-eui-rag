@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>RunMesh EUI Expert</title>
+    <title>RunMesh EUI Docs Copilot</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -18,21 +18,30 @@
         <div class="brand">
           <span class="brand-mark">RM</span>
           <div>
-            <div class="brand-title">RunMesh EUI Expert</div>
-            <div class="brand-sub">EUI / ECL 21.x grounded assistant</div>
+            <div class="brand-title">RunMesh EUI Docs Copilot</div>
+            <div class="brand-sub">EUI 21.x documentation copilot</div>
           </div>
         </div>
         <div class="topbar-meta">
-          <span class="pill">Live RAG</span>
-          <span class="meta">gpt-5.2</span>
+          <span class="pill">Docs RAG</span>
+          <span id="model-badge" class="meta">gpt-5.4</span>
         </div>
       </div>
     </header>
 
     <section class="hero">
       <div class="hero-inner">
-        <h1>Ask about EUI/ECL components, APIs, and migration paths.</h1>
-        <p>Grounded answers with citations, tailored for builders who want quick, confident implementation guidance.</p>
+        <div class="eyebrow">Official docs indexed, independent UI</div>
+        <h1>Ask about EUI 21.x components, directives, pipes, modules, routes, and deprecations.</h1>
+        <p>
+          Grounded answers over the official <code class="hero-code">documentation.json</code>, tuned for Angular implementation work, migration
+          checks, and component API lookup.
+        </p>
+        <div class="hero-notes">
+          <span class="note">Official docs source</span>
+          <span class="note">GPT-5.4 high</span>
+          <span class="note">Citations-first answers</span>
+        </div>
       </div>
     </section>
 
@@ -49,24 +58,24 @@
         <div id="chat-log" class="chat-log">
           <div class="chat-msg assistant">
             <strong>RunMesh</strong>
-            <p>Ask about any EUI component, API, or quickstart step.</p>
+            <p>Ask for selectors, inputs, outputs, module imports, standalone status, deprecations, routes, or examples from EUI 21.x.</p>
           </div>
         </div>
         <div class="suggestions">
-          <button class="suggestion-chip" data-prompt="Show a minimal Angular example for ecl-banner and list its inputs.">
-            ecl-banner quickstart
+          <button class="suggestion-chip" data-prompt="Show selector, standalone status, inputs, outputs, and a minimal Angular usage example for EuiEditorComponent.">
+            EuiEditor API
           </button>
-          <button class="suggestion-chip" data-prompt="How do I migrate from EUI/ECL 19.x to 21.x? Give a checklist.">
-            Migration checklist
+          <button class="suggestion-chip" data-prompt="List the directives related to tooltip, resizable, and permission handling in EUI 21.x, with selectors and import guidance.">
+            Directives
           </button>
-          <button class="suggestion-chip" data-prompt="What are the design tokens for spacing and typography in 21.x?">
-            Design tokens
+          <button class="suggestion-chip" data-prompt="Which pipes are available in EUI 21.x and what does each one transform? Include examples when the docs provide enough detail.">
+            Pipes
           </button>
-          <button class="suggestion-chip" data-prompt="Which ECL components are available in 21.x and how do I import them?">
-            Component list + import
+          <button class="suggestion-chip" data-prompt="Give me a migration checklist from EUI/ECL 19.x to 21.x focused on deprecated APIs and renamed usage patterns mentioned in the docs.">
+            Migration 19.x -> 21.x
           </button>
-          <button class="suggestion-chip" data-prompt="How do I theme EUI and override colors safely?">
-            Theming
+          <button class="suggestion-chip" data-prompt="Summarize the top-level routes, modules, and miscellaneous utilities exposed in the EUI 21.x documentation index.">
+            Routes + modules
           </button>
         </div>
         <form id="chat-form">
@@ -95,30 +104,77 @@
             </div>
             <div id="image-meta" class="image-meta muted">No images attached.</div>
           </div>
-          <textarea id="chat-input" rows="4" placeholder="Ask about EUI/ECL APIs, Angular usage, tokens, or migration steps..."></textarea>
+          <textarea id="chat-input" rows="4" placeholder="Ask about EUI 21.x selectors, APIs, Angular usage, routes, deprecations, or migration steps..."></textarea>
           <div class="actions">
             <button type="submit">Send</button>
           </div>
         </form>
       </section>
+
+      <aside class="rail">
+        <section class="card rail-card">
+          <div class="rail-label">Current index</div>
+          <h3>EUI 21.x documentation snapshot</h3>
+          <div class="metric-list">
+            <div class="metric">
+              <span class="metric-key">Docs version</span>
+              <span id="docs-version" class="metric-value">Loading</span>
+            </div>
+            <div class="metric">
+              <span class="metric-key">Chunks</span>
+              <span id="chunk-count" class="metric-value">-</span>
+            </div>
+            <div class="metric">
+              <span class="metric-key">Source</span>
+              <span id="source-type" class="metric-value">-</span>
+            </div>
+            <div class="metric">
+              <span class="metric-key">Indexed at</span>
+              <span id="last-refresh" class="metric-value">-</span>
+            </div>
+          </div>
+          <a id="docs-source-link" class="rail-link" href="https://euidev.ecdevops.eu/eui-docs-eui-21.x/" target="_blank" rel="noreferrer">
+            Open official EUI docs
+          </a>
+        </section>
+
+        <section class="card rail-card">
+          <div class="rail-label">Coverage</div>
+          <h3>What this index is strongest at</h3>
+          <ul class="plain-list">
+            <li>Component selectors, inputs, outputs, providers, templates, and source file paths</li>
+            <li>Directives, pipes, classes, interfaces, injectables, modules, and routes</li>
+            <li>Deprecated APIs and standalone status where present in the official JSON</li>
+            <li>Grounded summaries and citations to the official docs pages generated from the index</li>
+          </ul>
+        </section>
+      </aside>
     </main>
 
     <section class="about">
       <div class="about-inner">
-        <h3>About RunMesh</h3>
+        <h3>Attribution and licence note</h3>
         <p>
-          RunMesh is an OpenAI-first JS/TS framework for building agentic apps with tools, structured output, streaming,
-          and memory. It helps frontend teams ship reliable AI features without glue code.
+          This interface is an independent documentation assistant built on top of official EUI 21.x documentation
+          content. EUI/ECL is a European Commission project. This page is not presented as an official European
+          Commission product.
+        </p>
+        <p>
+          Documentation excerpts, identifiers, and code references remain subject to their original upstream licensing
+          and terms. Use the cited official pages and upstream repository as the source of truth before redistribution or
+          downstream packaging.
         </p>
         <div class="link-row">
-          <a href="https://www.npmjs.com/package/@runmesh/agent" target="_blank" rel="noreferrer">npm @runmesh/agent</a>
-          <a href="https://github.com/iluxu/RunMesh" target="_blank" rel="noreferrer">GitHub</a>
+          <a href="https://euidev.ecdevops.eu/eui-docs-eui-21.x/" target="_blank" rel="noreferrer">Official EUI docs</a>
+          <a href="https://euidev.ecdevops.eu/eui-docs-eui-21.x/json/documentation.json" target="_blank" rel="noreferrer">documentation.json</a>
+          <a href="https://github.com/ec-europa/europa-component-library" target="_blank" rel="noreferrer">ECL upstream repo</a>
+          <a href="https://github.com/iluxu/RunMesh" target="_blank" rel="noreferrer">RunMesh</a>
         </div>
       </div>
     </section>
 
     <footer>
-      <p>RunMesh EUI RAG - gpt-5.2 - Local ingest required</p>
+      <p>RunMesh EUI RAG · GPT-5.4 high · official EUI 21.x docs JSON as source index</p>
     </footer>
 
     <script src="/app.js" type="module"></script>

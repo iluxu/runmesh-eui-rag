@@ -1,5 +1,6 @@
 import { load } from "cheerio";
-import type { Cheerio, Element } from "cheerio";
+import type { Cheerio } from "cheerio";
+import type { AnyNode, Element } from "domhandler";
 import { chromium, type Page } from "playwright";
 import { isHtmlUrl, normalizeWhitespace, stripHashes, toAbsoluteUrl } from "./utils.js";
 import { CodeBlockRecord, PageRecord, PageSection, TableRecord } from "./types.js";
@@ -80,7 +81,7 @@ function extractBreadcrumbs($: CheerioAPI): string[] {
   return crumbs;
 }
 
-function extractCodeBlocks($root: Cheerio<Element>, $: CheerioAPI): CodeBlockRecord[] {
+function extractCodeBlocks($root: Cheerio<AnyNode>, $: CheerioAPI): CodeBlockRecord[] {
   const blocks: CodeBlockRecord[] = [];
   $root.find("pre code").each((_, el) => {
     const code = $(el).text();
@@ -93,7 +94,7 @@ function extractCodeBlocks($root: Cheerio<Element>, $: CheerioAPI): CodeBlockRec
   return blocks;
 }
 
-function extractTables($root: Cheerio<Element>, $: CheerioAPI): TableRecord[] {
+function extractTables($root: Cheerio<AnyNode>, $: CheerioAPI): TableRecord[] {
   const tables: TableRecord[] = [];
   $root.find("table").each((_, table) => {
     const headers = $(table)
@@ -101,17 +102,17 @@ function extractTables($root: Cheerio<Element>, $: CheerioAPI): TableRecord[] {
       .map((_, th) => normalizeWhitespace($(th).text()))
       .get()
       .filter(Boolean);
-    const rows = $(table)
+    const rows: string[][] = [];
+    $(table)
       .find("tbody tr")
-      .map((_, tr) =>
-        $(tr)
+      .each((_, tr) => {
+        const row = $(tr)
           .find("td")
           .map((_, td) => normalizeWhitespace($(td).text()))
           .get()
-          .filter(Boolean)
-      )
-      .get()
-      .filter((row) => row.length > 0);
+          .filter(Boolean);
+        if (row.length) rows.push(row);
+      });
     if (headers.length || rows.length) {
       tables.push({ headers, rows });
     }

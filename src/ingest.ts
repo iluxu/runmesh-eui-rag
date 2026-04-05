@@ -2,13 +2,22 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { crawlSite } from "./crawler.js";
+import { fetchDocumentationJsonPages } from "./documentation-json.js";
 import { buildChunks } from "./embed.js";
 import { formatDate } from "./utils.js";
 
 const ENV = process.env;
-const BASE_URL = ENV.RAG_BASE_URL ?? ENV.EUI_BASE_URL ?? "https://euidev.ecdevops.eu/";
-const DOC_VERSION = ENV.RAG_DOC_VERSION ?? ENV.EUI_DOC_VERSION ?? "EUI 21";
+const BASE_URL = ENV.RAG_BASE_URL ?? ENV.EUI_BASE_URL ?? "https://euidev.ecdevops.eu/eui-docs-eui-21.x/";
+const DOC_VERSION = ENV.RAG_DOC_VERSION ?? ENV.EUI_DOC_VERSION ?? "EUI 21.x";
 const DOCS_NAME = ENV.RAG_DOCS_NAME ?? ENV.EUI_DOCS_NAME ?? "EUI";
+const DEFAULT_EUI_DOC_JSON_URL = "https://euidev.ecdevops.eu/eui-docs-eui-21.x/json/documentation.json";
+const DOC_JSON_URL =
+  ENV.RAG_DOC_JSON_URL ??
+  ENV.EUI_DOC_JSON_URL ??
+  (BASE_URL === "https://euidev.ecdevops.eu/eui-docs-eui-21.x/" ? DEFAULT_EUI_DOC_JSON_URL : "");
+const DOCS_BASE_URL = ENV.RAG_DOCS_BASE_URL ?? ENV.EUI_DOCS_BASE_URL;
+const DOC_JSON_INCLUDE_CODE =
+  ENV.RAG_DOC_JSON_INCLUDE_CODE === "1" || ENV.EUI_DOC_JSON_INCLUDE_CODE === "1";
 const MAX_PAGES = Number(ENV.RAG_MAX_PAGES ?? ENV.EUI_MAX_PAGES ?? 1200);
 const CONCURRENCY = Number(ENV.RAG_CONCURRENCY ?? ENV.EUI_CONCURRENCY ?? 4);
 const DELAY_MS = Number(ENV.RAG_DELAY_MS ?? ENV.EUI_DELAY_MS ?? 150);
@@ -39,33 +48,46 @@ const EMBEDDING_MODEL =
   "text-embedding-3-small";
 
 async function main() {
-  console.log(`RunMesh ingest starting for ${DOCS_NAME}: ${BASE_URL}`);
-  const pages = await crawlSite({
-    baseUrl: BASE_URL,
-    seedUrls: SEED_URLS.length ? SEED_URLS : undefined,
-    maxPages: MAX_PAGES,
-    concurrency: CONCURRENCY,
-    delayMs: DELAY_MS,
-    ignoreRobots: IGNORE_ROBOTS,
-    mode: CRAWL_MODE,
-    browserTimeoutMs: BROWSER_TIMEOUT_MS,
-    browserWaitMs: BROWSER_WAIT_MS,
-    userAgent: USER_AGENT,
-    includePatterns: URL_INCLUDE.length ? URL_INCLUDE : undefined,
-    excludePatterns: URL_EXCLUDE.length ? URL_EXCLUDE : undefined,
-    onProgress: (count, url) => {
-      if (count % 25 === 0) {
-        console.log(`Crawled ${count} pages (latest: ${url})`);
-      }
-    }
-  });
+  const useDocumentationJson = DOC_JSON_URL.trim().length > 0;
+  console.log(
+    `RunMesh ingest starting for ${DOCS_NAME}: ${useDocumentationJson ? DOC_JSON_URL : BASE_URL}`
+  );
+
+  const pages = useDocumentationJson
+    ? await fetchDocumentationJsonPages({
+        jsonUrl: DOC_JSON_URL,
+        docsBaseUrl: DOCS_BASE_URL,
+        docVersion: DOC_VERSION,
+        includeCode: DOC_JSON_INCLUDE_CODE
+      })
+    : await crawlSite({
+        baseUrl: BASE_URL,
+        seedUrls: SEED_URLS.length ? SEED_URLS : undefined,
+        maxPages: MAX_PAGES,
+        concurrency: CONCURRENCY,
+        delayMs: DELAY_MS,
+        ignoreRobots: IGNORE_ROBOTS,
+        mode: CRAWL_MODE,
+        browserTimeoutMs: BROWSER_TIMEOUT_MS,
+        browserWaitMs: BROWSER_WAIT_MS,
+        userAgent: USER_AGENT,
+        includePatterns: URL_INCLUDE.length ? URL_INCLUDE : undefined,
+        excludePatterns: URL_EXCLUDE.length ? URL_EXCLUDE : undefined,
+        onProgress: (count, url) => {
+          if (count % 25 === 0) {
+            console.log(`Crawled ${count} pages (latest: ${url})`);
+          }
+        }
+      });
 
   await fs.mkdir(DATA_DIR, { recursive: true });
   await fs.writeFile(
     PAGES_PATH,
     JSON.stringify(
       {
-        baseUrl: BASE_URL,
+        baseUrl: useDocumentationJson ? DOCS_BASE_URL ?? DOC_JSON_URL : BASE_URL,
+        sourceType: useDocumentationJson ? "documentation-json" : "crawl",
+        sourceUrl: useDocumentationJson ? DOC_JSON_URL : BASE_URL,
         generatedAt: new Date().toISOString(),
         pages
       },
@@ -81,7 +103,9 @@ async function main() {
     CHUNKS_PATH,
     JSON.stringify(
       {
-        baseUrl: BASE_URL,
+        baseUrl: useDocumentationJson ? DOCS_BASE_URL ?? DOC_JSON_URL : BASE_URL,
+        sourceType: useDocumentationJson ? "documentation-json" : "crawl",
+        sourceUrl: useDocumentationJson ? DOC_JSON_URL : BASE_URL,
         version: DOC_VERSION,
         generatedAt: new Date().toISOString(),
         model: EMBEDDING_MODEL,

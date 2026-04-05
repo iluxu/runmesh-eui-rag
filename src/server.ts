@@ -9,17 +9,26 @@ import { InMemoryAdapter, InMemoryRetriever, OpenAIEmbeddings } from "@runmesh/m
 import { tool, ToolRegistry } from "@runmesh/tools";
 import { z } from "zod";
 import { crawlSite } from "./crawler.js";
+import { fetchDocumentationJsonPages } from "./documentation-json.js";
 import { buildChunks } from "./embed.js";
 import { ChunkRecord } from "./types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "../public");
 
-const DEFAULT_MODEL = "gpt-5.2";
+const DEFAULT_MODEL = "gpt-5.4";
 const ENV = process.env;
-const BASE_URL = ENV.RAG_BASE_URL ?? ENV.EUI_BASE_URL ?? "https://euidev.ecdevops.eu/";
-const DOC_VERSION = ENV.RAG_DOC_VERSION ?? ENV.EUI_DOC_VERSION ?? "EUI 21";
+const BASE_URL = ENV.RAG_BASE_URL ?? ENV.EUI_BASE_URL ?? "https://euidev.ecdevops.eu/eui-docs-eui-21.x/";
+const DOC_VERSION = ENV.RAG_DOC_VERSION ?? ENV.EUI_DOC_VERSION ?? "EUI 21.x";
 const DOCS_NAME = ENV.RAG_DOCS_NAME ?? ENV.EUI_DOCS_NAME ?? "EUI";
+const DEFAULT_EUI_DOC_JSON_URL = "https://euidev.ecdevops.eu/eui-docs-eui-21.x/json/documentation.json";
+const DOC_JSON_URL =
+  ENV.RAG_DOC_JSON_URL ??
+  ENV.EUI_DOC_JSON_URL ??
+  (BASE_URL === "https://euidev.ecdevops.eu/eui-docs-eui-21.x/" ? DEFAULT_EUI_DOC_JSON_URL : "");
+const DOCS_BASE_URL = ENV.RAG_DOCS_BASE_URL ?? ENV.EUI_DOCS_BASE_URL;
+const DOC_JSON_INCLUDE_CODE =
+  ENV.RAG_DOC_JSON_INCLUDE_CODE === "1" || ENV.EUI_DOC_JSON_INCLUDE_CODE === "1";
 const DEFAULT_PROMPT = ENV.RAG_DEFAULT_PROMPT ?? ENV.EUI_DEFAULT_PROMPT ?? "Summarize the docs.";
 const DEFAULT_STRUCTURED_PROMPT =
   ENV.RAG_STRUCTURED_PROMPT ?? ENV.EUI_STRUCTURED_PROMPT ?? "Summarize the current docs.";
@@ -165,27 +174,39 @@ async function refreshIndex() {
   indexState = "crawling";
   pagesCrawled = 0;
   lastCrawledUrl = null;
-  const pages = await crawlSite({
-    baseUrl: BASE_URL,
-    seedUrls: SEED_URLS.length ? SEED_URLS : undefined,
-    maxPages: MAX_PAGES,
-    concurrency: CONCURRENCY,
-    delayMs: DELAY_MS,
-    ignoreRobots: IGNORE_ROBOTS,
-    mode: CRAWL_MODE,
-    browserTimeoutMs: BROWSER_TIMEOUT_MS,
-    browserWaitMs: BROWSER_WAIT_MS,
-    userAgent: USER_AGENT,
-    includePatterns: URL_INCLUDE.length ? URL_INCLUDE : undefined,
-    excludePatterns: URL_EXCLUDE.length ? URL_EXCLUDE : undefined,
-    onProgress: (count, url) => {
-      pagesCrawled = count;
-      lastCrawledUrl = url;
-      if (count % 50 === 0) {
-        console.log(`Crawled ${count} pages (latest: ${url})`);
-      }
-    }
-  });
+  const useDocumentationJson = DOC_JSON_URL.trim().length > 0;
+  const pages = useDocumentationJson
+    ? await fetchDocumentationJsonPages({
+        jsonUrl: DOC_JSON_URL,
+        docsBaseUrl: DOCS_BASE_URL,
+        docVersion: DOC_VERSION,
+        includeCode: DOC_JSON_INCLUDE_CODE
+      })
+    : await crawlSite({
+        baseUrl: BASE_URL,
+        seedUrls: SEED_URLS.length ? SEED_URLS : undefined,
+        maxPages: MAX_PAGES,
+        concurrency: CONCURRENCY,
+        delayMs: DELAY_MS,
+        ignoreRobots: IGNORE_ROBOTS,
+        mode: CRAWL_MODE,
+        browserTimeoutMs: BROWSER_TIMEOUT_MS,
+        browserWaitMs: BROWSER_WAIT_MS,
+        userAgent: USER_AGENT,
+        includePatterns: URL_INCLUDE.length ? URL_INCLUDE : undefined,
+        excludePatterns: URL_EXCLUDE.length ? URL_EXCLUDE : undefined,
+        onProgress: (count, url) => {
+          pagesCrawled = count;
+          lastCrawledUrl = url;
+          if (count % 50 === 0) {
+            console.log(`Crawled ${count} pages (latest: ${url})`);
+          }
+        }
+      });
+  if (useDocumentationJson) {
+    pagesCrawled = pages.length;
+    lastCrawledUrl = DOC_JSON_URL;
+  }
   indexState = "embedding";
   const pagesWithVersion = pages.map((page) => ({ ...page, version: DOC_VERSION }));
   const chunks = await buildChunks(pagesWithVersion, EMBEDDING_MODEL, ENV.OPENAI_API_KEY);
@@ -198,7 +219,9 @@ async function refreshIndex() {
       CHUNKS_PATH,
       JSON.stringify(
         {
-          baseUrl: BASE_URL,
+          baseUrl: useDocumentationJson ? DOCS_BASE_URL ?? DOC_JSON_URL : BASE_URL,
+          sourceType: useDocumentationJson ? "documentation-json" : "crawl",
+          sourceUrl: useDocumentationJson ? DOC_JSON_URL : BASE_URL,
           generatedAt: lastRefresh,
           model: EMBEDDING_MODEL,
           version: DOC_VERSION,
@@ -238,10 +261,10 @@ function createTools() {
         query: z.string(),
         limit: z.number().min(1).max(8).default(5)
       }),
-      handler: async ({ query, limit }) => {
+      handler: async ({ query, limit }: { query: string; limit: number }) => {
         if (!retriever) throw new Error("Retriever not loaded");
         const results = await retriever.search(query, limit);
-        return results.map((item) => {
+        return results.map((item: { id: string; text: string }) => {
           const chunk = chunkIndex.get(item.id);
           const anchor = chunk?.anchor ?? "";
           return {
@@ -263,7 +286,7 @@ function createTools() {
   return tools;
 }
 
-const ragPolicy: Policy = ({ messages }) => {
+const ragPolicy: Policy = ({ messages }: { messages: Array<{ role: string; content?: unknown }> }) => {
   const lastUser = [...messages].reverse().find((msg) => msg.role === "user");
   const content = typeof lastUser?.content === "string" ? lastUser.content : "";
   if (!content) return { allow: true };
@@ -355,7 +378,7 @@ async function handleAskStructured(req: http.IncomingMessage, res: http.ServerRe
 
   try {
     const sources = await retriever.search(prompt, 5);
-    const sourcePayload = sources.map((item) => {
+    const sourcePayload = sources.map((item: { id: string; text: string }) => {
       const chunk = chunkIndex.get(item.id);
       const anchor = chunk?.anchor ?? "";
       return {
@@ -385,7 +408,7 @@ async function handleAskStructured(req: http.IncomingMessage, res: http.ServerRe
     });
 
     const client = createOpenAI({
-      apiKey: ENV.OPENAI_API_KEY,
+      apiKey: ENV.OPENAI_API_KEY!,
       defaultModel: ENV.OPENAI_MODEL ?? DEFAULT_MODEL
     });
 

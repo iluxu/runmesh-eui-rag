@@ -3,9 +3,10 @@
 A local RunMesh app that ingests a documentation site (default: EUI) and provides an expert RAG chat experience with citations.
 
 ## Requirements
-- Public access to the target docs site (default: `https://euidev.ecdevops.eu/`)
+- Public access to the target docs site (default: `https://euidev.ecdevops.eu/eui-docs-eui-21.x/`)
 - `OPENAI_API_KEY`
-- `OPENAI_MODEL` (defaults to `gpt-5.2`)
+- `OPENAI_MODEL` (defaults to `gpt-5.4`)
+- `OPENAI_REASONING_EFFORT` (defaults to `high` for GPT-5 family requests made via the HTTP API)
 
 ## Install
 
@@ -20,7 +21,8 @@ By default the server crawls the site at startup and builds the index in memory.
 
 ```bash
 export OPENAI_API_KEY="..."
-export OPENAI_MODEL="gpt-5.2"
+export OPENAI_MODEL="gpt-5.4"
+export OPENAI_REASONING_EFFORT="high"
 
 pnpm --dir runmesh-eui-rag start
 ```
@@ -28,9 +30,12 @@ pnpm --dir runmesh-eui-rag start
 Optional controls:
 Use the `RAG_` prefix (preferred). `EUI_` variables are still accepted for backward compatibility.
 
-- `RAG_BASE_URL=https://euidev.ecdevops.eu/`
-- `RAG_DOC_VERSION=EUI 21`
+- `RAG_BASE_URL=https://euidev.ecdevops.eu/eui-docs-eui-21.x/`
+- `RAG_DOC_VERSION=EUI 21.x`
 - `RAG_DOCS_NAME=EUI`
+- `RAG_DOC_JSON_URL=https://euidev.ecdevops.eu/eui-docs-eui-21.x/json/documentation.json` to ingest from the Compodoc JSON instead of crawling HTML
+- `RAG_DOCS_BASE_URL=https://euidev.ecdevops.eu/eui-docs-eui-21.x/` to override generated source links when ingesting JSON
+- `RAG_DOC_JSON_INCLUDE_CODE=1` to also embed `sourceCode`, `template`, and `styles` from `documentation.json`
 - `RAG_LIVE=0` to disable live crawl
 - `RAG_USE_LOCAL=1` to force loading `data/chunks.json`
 - `RAG_SAVE=1` to save the live crawl to disk
@@ -51,15 +56,19 @@ Use the `RAG_` prefix (preferred). `EUI_` variables are still accepted for backw
 
 ```bash
 export OPENAI_API_KEY="..."
-export OPENAI_MODEL="gpt-5.2"
+export OPENAI_MODEL="gpt-5.4"
+export OPENAI_REASONING_EFFORT="high"
 
 pnpm --dir runmesh-eui-rag ingest
 ```
 
 Options:
 Use the `RAG_` prefix (preferred). `EUI_` variables are still accepted.
-- `RAG_BASE_URL` (default: https://euidev.ecdevops.eu/)
-- `RAG_DOC_VERSION` (default: EUI 21)
+- `RAG_BASE_URL` (default: https://euidev.ecdevops.eu/eui-docs-eui-21.x/)
+- `RAG_DOC_VERSION` (default: EUI 21.x)
+- `RAG_DOC_JSON_URL` (default: https://euidev.ecdevops.eu/eui-docs-eui-21.x/json/documentation.json)
+- `RAG_DOCS_BASE_URL` to override generated source links for JSON ingestion
+- `RAG_DOC_JSON_INCLUDE_CODE=1` to include raw code/template/style payloads from `documentation.json`
 - `RAG_MAX_PAGES` (default: 1200)
 - `RAG_CONCURRENCY` (default: 4)
 - `RAG_DELAY_MS` (default: 150)
@@ -73,7 +82,8 @@ Use the `RAG_` prefix (preferred). `EUI_` variables are still accepted.
 
 ```bash
 export OPENAI_API_KEY="..."
-export OPENAI_MODEL="gpt-5.2"
+export OPENAI_MODEL="gpt-5.4"
+export OPENAI_REASONING_EFFORT="high"
 export RAG_BASE_URL="https://docs.polymarket.com/developers/"
 export RAG_DOC_VERSION="Polymarket Developers"
 export RAG_DOCS_NAME="Polymarket developer"
@@ -113,7 +123,8 @@ In Cloudflare Pages project settings:
 - Bind R2 bucket: `EUI_RAG_BUCKET` -> `runmesh-eui-chunks`
 - Add secrets:
   - `OPENAI_API_KEY`
-  - `OPENAI_MODEL=gpt-5.2`
+  - `OPENAI_MODEL=gpt-5.4`
+  - `OPENAI_REASONING_EFFORT=high`
   - `OPENAI_EMBEDDING_MODEL=text-embedding-3-small`
 
 ### 3) Deploy the Pages site (includes Functions)

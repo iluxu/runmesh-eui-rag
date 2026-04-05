@@ -41,6 +41,7 @@ export type Env = {
   OPENAI_API_KEY: string;
   OPENAI_MODEL?: string;
   OPENAI_EMBEDDING_MODEL?: string;
+  OPENAI_REASONING_EFFORT?: string;
   RAG_DOC_VERSION?: string;
   RAG_PREFERRED_VERSION?: string;
   RAG_DOCS_NAME?: string;
@@ -57,8 +58,9 @@ export type Env = {
   EUI_RAG_BUCKET?: R2Bucket;
 };
 
-const DEFAULT_MODEL = "gpt-5.2";
+const DEFAULT_MODEL = "gpt-5.4";
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
+const DEFAULT_REASONING_EFFORT = "high";
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 12;
 const MAX_IMAGE_COUNT = 3;
@@ -94,7 +96,14 @@ const STRICT_PROMPT_SUFFIX = [
 const CHUNKS_KEY = "chunks.json";
 
 let cachedChunks: ChunkWithNorm[] | null = null;
-let cachedMeta: { generatedAt?: string; model?: string; baseUrl?: string; version?: string } | null = null;
+let cachedMeta: {
+  generatedAt?: string;
+  model?: string;
+  baseUrl?: string;
+  version?: string;
+  sourceType?: string;
+  sourceUrl?: string;
+} | null = null;
 let loadingPromise: Promise<ChunkWithNorm[]> | null = null;
 const rateLimits = new Map<string, { count: number; resetAt: number }>();
 
@@ -113,6 +122,24 @@ function dotProduct(a: number[], b: number[]): number {
     sum += a[i] * b[i];
   }
   return sum;
+}
+
+function supportsReasoningEffort(model: string) {
+  return /^gpt-5(\b|[.-])|^o[1345]\b/i.test(model);
+}
+
+export function buildChatCompletionOptions(env: Env) {
+  const model = env.OPENAI_MODEL ?? DEFAULT_MODEL;
+  const request: Record<string, unknown> = {
+    model,
+    temperature: 0.2
+  };
+
+  if (supportsReasoningEffort(model)) {
+    request.reasoning_effort = env.OPENAI_REASONING_EFFORT ?? DEFAULT_REASONING_EFFORT;
+  }
+
+  return request;
 }
 
 export async function loadChunks(env: Env): Promise<ChunkWithNorm[]> {
@@ -134,6 +161,8 @@ export async function loadChunks(env: Env): Promise<ChunkWithNorm[]> {
       model?: string;
       baseUrl?: string;
       version?: string;
+      sourceType?: string;
+      sourceUrl?: string;
     };
 
     const chunks = (payload.chunks ?? []).map((chunk) => ({
@@ -145,7 +174,9 @@ export async function loadChunks(env: Env): Promise<ChunkWithNorm[]> {
       generatedAt: payload.generatedAt,
       model: payload.model,
       baseUrl: payload.baseUrl,
-      version: payload.version
+      version: payload.version,
+      sourceType: payload.sourceType,
+      sourceUrl: payload.sourceUrl
     };
     cachedChunks = chunks;
     return chunks;
@@ -506,8 +537,7 @@ export async function generateAnswer(
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      model: env.OPENAI_MODEL ?? DEFAULT_MODEL,
-      temperature: 0.2,
+      ...buildChatCompletionOptions(env),
       messages: chatMessages
     })
   });

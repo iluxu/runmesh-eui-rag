@@ -1,4 +1,5 @@
 import {
+  buildChatCompletionOptions,
   buildSystemPrompt,
   buildUserContent,
   checkRateLimit,
@@ -131,8 +132,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: env.OPENAI_MODEL ?? "gpt-5.2",
-        temperature: 0.2,
+        ...buildChatCompletionOptions(env),
         stream: true,
         messages: [{ role: "system", content: systemPrompt }, ...conversation, { role: "user", content: userContent }]
       })
