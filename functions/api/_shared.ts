@@ -95,6 +95,8 @@ const STRICT_PROMPT_SUFFIX = [
 ].join("\n");
 const CHUNKS_KEY = "chunks.json";
 
+// Pages isolates keep this in memory, so replacing chunks.json in R2 may require a redeploy
+// before /api/status and /api/ask start reading the new object.
 let cachedChunks: ChunkWithNorm[] | null = null;
 let cachedMeta: {
   generatedAt?: string;
